@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "botanical-twin": {
+      "command": "node",
+      "args": ["/ruta/absoluta/botanical-twin-fastmcp.js"]
+    }
+  }
+}

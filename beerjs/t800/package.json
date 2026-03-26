@@ -1,0 +1,17 @@
+{
+  "name": "maven-smart-system",
+  "version": "1.0.0",
+  "description": "Maven Smart System - Threat Detection Dashboard",
+  "type": "module",
+  "scripts": {
+    "start": "node sert800proxy.js",
+    "simulate": "node esp32-simulator.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "@modelcontextprotocol/sdk": "^1.10.2",
+    "ws": "^8.18.0",
+    "zod": "^3.24.2",
+    "google-auth-library": "latest"
+  }
+}

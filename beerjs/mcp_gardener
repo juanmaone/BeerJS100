@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "gardener-ai": {
+      "command": "node",
+      "args": ["C:\\proyectos\\iot\\beerjs\\dashboard_server.js"]
+    },
+    "gardener-ai-mcp": {
+      "command": "node",
+      "args": [
+        "../projects/node/api-base/src/gardener-ai-mcp/dist/index.js"
+      ],
+      "env": {
+        "GARDENER_DB_PATH": "../projects/node/api-base/src/gardener-ai-mcp/data/gardener.sqlite"
+      }
+    }
+  }
+}

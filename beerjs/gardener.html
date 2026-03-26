@@ -1,0 +1,1425 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Labyrinthine Botanical Twin</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400;1,600&family=IM+Fell+English:ital@0;1&family=Courier+Prime:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<!-- Cargar config ANTES que el resto. Editar config.js con API key y URL del broker -->
+<script src="config.js"></script>
+<!-- MQTT.js para conexión WebSocket al broker Mosquitto -->
+<script src="https://cdn.jsdelivr.net/npm/mqtt@5.10.1/dist/mqtt.min.js"></script>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --parch:    #e8e0cc;
+  --parch2:   #ddd4bc;
+  --parch3:   #d0c8b0;
+  --parch4:   #c8bea4;
+  --ink:      #1c1710;
+  --ink2:     #2e2820;
+  --ink3:     #483e30;
+  --ink4:     #6a5e4c;
+  --blue:     #2a3f6f;
+  --blue2:    #3d5a8a;
+  --blue3:    #6080b0;
+  --blue4:    #a0b8d8;
+  --terra:    #8b4020;
+  --terra2:   #b86030;
+  --terra3:   #d48050;
+  --terra4:   #e0a880;
+  --gold:     #8a6a20;
+  --gold2:    #b89040;
+  --serif:    'Playfair Display', Georgia, serif;
+  --fell:     'IM Fell English', Georgia, serif;
+  --mono:     'Courier Prime', 'Courier New', monospace;
+}
+
+body {
+  background: var(--parch);
+  color: var(--ink);
+  font-family: var(--serif);
+  min-height: 100vh;
+  position: relative;
+  overflow-x: hidden;
+}
+
+/* ── Textura y grilla de plano ── */
+body::before {
+  content: '';
+  position: fixed; inset: 0; pointer-events: none; z-index: 0;
+  background-image:
+    linear-gradient(rgba(42,63,111,0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(42,63,111,0.06) 1px, transparent 1px),
+    linear-gradient(rgba(42,63,111,0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(42,63,111,0.03) 1px, transparent 1px);
+  background-size: 80px 80px, 80px 80px, 20px 20px, 20px 20px;
+}
+body::after {
+  content: '';
+  position: fixed; inset: 0; pointer-events: none; z-index: 0;
+  background: radial-gradient(ellipse at 0% 0%, rgba(139,64,32,0.04) 0%, transparent 50%),
+              radial-gradient(ellipse at 100% 100%, rgba(42,63,111,0.06) 0%, transparent 50%);
+}
+
+.app { position: relative; z-index: 1; max-width: 1200px; margin: 0 auto; padding: 0 20px 40px; }
+
+/* ── Marca de corte blueprint (esquinas) ── */
+.corner-mark {
+  position: fixed; width: 20px; height: 20px;
+  border-color: var(--blue); border-style: solid; opacity: 0.3;
+}
+.corner-mark.tl { top: 12px; left: 12px; border-width: 1px 0 0 1px; }
+.corner-mark.tr { top: 12px; right: 12px; border-width: 1px 1px 0 0; }
+.corner-mark.bl { bottom: 12px; left: 12px; border-width: 0 0 1px 1px; }
+.corner-mark.br { bottom: 12px; right: 12px; border-width: 0 1px 1px 0; }
+
+/* ── Header ── */
+header {
+  padding: 28px 0 0;
+  border-bottom: 2px solid var(--ink);
+  margin-bottom: 0;
+  display: flex; flex-direction: column;
+}
+.header-top {
+  display: flex; align-items: flex-start; gap: 16px; margin-bottom: 8px;
+}
+.header-emblem {
+  width: 52px; height: 52px; flex-shrink: 0;
+  border: 1.5px solid var(--blue); display: flex; align-items: center; justify-content: center;
+  background: var(--parch2); position: relative;
+}
+.header-emblem::before {
+  content: ''; position: absolute; inset: 3px;
+  border: 0.5px solid var(--blue3);
+  border-radius: 50%;
+}
+.header-emblem svg { width: 28px; height: 28px; }
+.header-titles { flex: 1; }
+header h1 {
+  font-family: var(--serif); font-size: 36px; font-weight: 700;
+  letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink);
+  line-height: 1;
+}
+header h1 em { font-style: normal; color: var(--terra); }
+.header-sub {
+  font-family: var(--mono); font-size: 13px; color: var(--ink4);
+  letter-spacing: 0.18em; text-transform: uppercase;
+  margin-top: 4px;
+}
+.header-rule {
+  height: 1px; background: var(--ink3); margin: 8px 0 0;
+  display: flex; align-items: center; gap: 0;
+}
+.header-badges {
+  display: flex; gap: 0; border: 1px solid var(--ink3);
+  overflow: hidden; margin-left: auto; margin-bottom: 2px; flex-shrink: 0;
+}
+.hbadge {
+  padding: 3px 10px;
+  font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em;
+  text-transform: uppercase; border-right: 1px solid var(--ink3);
+  display: flex; align-items: center; gap: 5px;
+  color: var(--ink3);
+}
+.hbadge:last-child { border-right: none; }
+.hbadge.active { background: var(--blue); color: var(--parch); }
+.hbadge.terra  { background: var(--terra); color: var(--parch); }
+.live-dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; animation: blink-dot 2s ease-in-out infinite; }
+@keyframes blink-dot { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+/* ── Section Accord ── */
+.accord { margin-top: 0; border-bottom: 1px solid var(--ink3); }
+.accord-header {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 0; cursor: pointer;
+  user-select: none;
+  border-top: 1px solid var(--parch3);
+  transition: background 0.15s;
+}
+.accord-header:hover { background: rgba(42,63,111,0.03); }
+.accord-num {
+  font-family: var(--mono); font-size: 13px; color: var(--blue3);
+  min-width: 28px; letter-spacing: 0.05em;
+}
+.accord-title {
+  font-family: var(--mono); font-size: 14px; font-weight: 700;
+  letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink2);
+  flex: 1;
+}
+.accord-subtitle { font-family: var(--mono); font-size: 11px; color: var(--ink4); letter-spacing: 0.08em; }
+.accord-toggle {
+  font-family: var(--mono); font-size: 18px; color: var(--blue3);
+  transition: transform 0.25s; line-height: 1;
+}
+.accord.open .accord-toggle { transform: rotate(45deg); }
+.accord-body { display: none; padding: 4px 0 16px 28px; }
+.accord.open .accord-body { display: block; }
+
+/* ── Sensor data grid ── */
+.sensor-top { border-top: 1px solid var(--parch3); padding: 12px 0 0; }
+.sensor-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; }
+.sensor-cell {
+  padding: 10px 14px; border-right: 1px solid var(--parch3);
+  position: relative;
+}
+.sensor-cell:last-child { border-right: none; }
+.sensor-cell::before {
+  content: attr(data-coord);
+  position: absolute; top: 4px; right: 6px;
+  font-family: var(--mono); font-size: 10px; color: var(--blue4); opacity: 0.6;
+}
+.sc-label {
+  font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em;
+  text-transform: uppercase; color: var(--ink4); margin-bottom: 4px;
+}
+.sc-val {
+  font-family: var(--mono); font-size: 33px; font-weight: 700;
+  line-height: 1; color: var(--ink);
+}
+.sc-val .unit { font-size: 15px; font-weight: 400; }
+.sc-annot {
+  font-family: var(--fell); font-style: italic; font-size: 13px;
+  color: var(--terra2); margin-top: 3px;
+}
+.sc-bar { height: 2px; background: var(--parch3); margin-top: 6px; overflow: hidden; }
+.sc-fill { height: 100%; transition: width 1.2s ease; }
+.sc-status { font-family: var(--mono); font-size: 11px; color: var(--ink4); margin-top: 3px; }
+
+.spark-row { border-top: 1px solid var(--parch3); padding: 8px 14px; }
+canvas { display: block; }
+
+/* ── Avatar / Gemelo ── */
+.twin-layout { display: grid; grid-template-columns: 220px 1fr; gap: 24px; align-items: start; }
+.avatar-zone { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.blueprint-frame {
+  position: relative; width: 200px; height: 240px;
+  border: 1px solid var(--blue3);
+  background: var(--parch2);
+  display: flex; align-items: center; justify-content: center;
+}
+.blueprint-frame::before {
+  content: ''; position: absolute;
+  top: 4px; left: 4px; right: 4px; bottom: 4px;
+  border: 0.5px solid rgba(42,63,111,0.2);
+}
+/* Cruces en esquinas blueprinta */
+.blueprint-frame::after {
+  content: attr(data-label);
+  position: absolute; bottom: -1px; left: 6px;
+  font-family: var(--mono); font-size: 10px; color: var(--blue3);
+  background: var(--parch2); padding: 0 4px;
+  letter-spacing: 0.1em;
+}
+#plant-svg { width: 160px; height: 200px; overflow: visible; }
+
+.state-stamp {
+  font-family: var(--mono); font-size: 13px; font-weight: 700;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  border: 1.5px solid currentColor; padding: 3px 10px;
+  text-align: center; width: 100%;
+  transition: all 0.4s;
+}
+.stamp-ok     { color: var(--blue); }
+.stamp-hot    { color: var(--terra); }
+.stamp-cold   { color: var(--blue2); }
+.stamp-thirst { color: var(--gold); }
+.stamp-water  { color: var(--terra2); }
+.stamp-greet  { color: var(--blue2); }
+
+/* Burbuja diálogo estilo Borges */
+.speech-box {
+  border: 1px solid var(--ink3); background: var(--parch);
+  padding: 10px 12px; font-family: var(--fell); font-style: italic;
+  font-size: 15px; line-height: 1.6; color: var(--ink2);
+  position: relative; min-height: 54px;
+  display: none;
+}
+.speech-box.visible { display: block; }
+.speech-box::before {
+  content: '"'; position: absolute; top: -8px; left: 8px;
+  font-size: 31px; color: var(--terra); line-height: 1;
+  font-family: var(--serif); background: var(--parch); padding: 0 2px;
+}
+.speech-box::after {
+  content: '"'; position: absolute; bottom: -12px; right: 8px;
+  font-size: 31px; color: var(--terra); line-height: 1;
+  font-family: var(--serif); background: var(--parch); padding: 0 2px;
+}
+
+.avatar-btns { display: flex; flex-direction: column; gap: 5px; width: 100%; }
+.btn-arch {
+  font-family: var(--mono); font-size: 11px; font-weight: 700;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  border: 1px solid var(--ink4); padding: 6px 10px; cursor: pointer;
+  background: transparent; color: var(--ink3); width: 100%;
+  transition: all 0.15s; text-align: left;
+  display: flex; align-items: center; gap: 6px;
+}
+.btn-arch:hover { background: var(--ink); color: var(--parch); border-color: var(--ink); }
+.btn-arch.terra { border-color: var(--terra); color: var(--terra); }
+.btn-arch.terra:hover { background: var(--terra); color: var(--parch); }
+.btn-arch.blue  { border-color: var(--blue); color: var(--blue); }
+.btn-arch.blue:hover  { background: var(--blue); color: var(--parch); }
+
+/* Columna derecha del gemelo */
+.twin-right { display: flex; flex-direction: column; gap: 12px; }
+.twin-data-row {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+}
+
+/* Estilo campo de datos tipo ficha */
+.data-card {
+  border: 1px solid var(--parch3); padding: 10px 12px;
+  background: var(--parch2);
+}
+.data-card-title {
+  font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em;
+  text-transform: uppercase; color: var(--ink4); border-bottom: 1px solid var(--parch3);
+  padding-bottom: 5px; margin-bottom: 8px;
+}
+.data-card-body { font-family: var(--mono); font-size: 14px; color: var(--ink2); line-height: 1.7; }
+
+/* Stats visitas */
+.visit-stats { display: flex; gap: 0; border: 1px solid var(--parch3); }
+.vstat { flex: 1; padding: 8px 10px; border-right: 1px solid var(--parch3); text-align: center; }
+.vstat:last-child { border-right: none; }
+.vstat-val { font-family: var(--mono); font-size: 28px; font-weight: 700; color: var(--terra); }
+.vstat-label { font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink4); }
+
+/* ── Proximidad ── */
+.prox-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.prox-meter {
+  border: 1px solid var(--blue3); padding: 12px; background: var(--parch2);
+  display: flex; flex-direction: column; gap: 8px;
+}
+.prox-val-big { font-family: var(--mono); font-size: 54px; font-weight: 700; color: var(--blue); line-height: 1; transition: color 0.4s; }
+.prox-unit-small { font-family: var(--mono); font-size: 15px; color: var(--ink4); }
+.prox-radial { position: relative; height: 8px; background: var(--parch3); overflow: hidden; }
+.prox-radial-fill { height: 100%; transition: width 0.8s ease, background 0.4s; }
+.prox-note { font-family: var(--fell); font-style: italic; font-size: 14px; color: var(--terra2); }
+
+.prox-sim { display: flex; flex-direction: column; gap: 8px; }
+.sim-label { font-family: var(--mono); font-size: 11px; letter-spacing: 0.12em; color: var(--ink4); text-transform: uppercase; }
+.sim-slider-row { display: flex; align-items: center; gap: 8px; }
+input[type=range] { flex: 1; accent-color: var(--blue); }
+.sim-val { font-family: var(--mono); font-size: 14px; color: var(--blue); min-width: 36px; text-align: right; }
+.sim-btns { display: flex; gap: 6px; }
+.sim-btns .btn-arch { flex: 1; text-align: center; justify-content: center; font-size: 11px; }
+
+/* Visit log estilo biblioteca */
+.visit-log { display: flex; flex-direction: column; gap: 0; }
+.visit-entry {
+  display: flex; gap: 10px; padding: 6px 0;
+  border-bottom: 1px solid var(--parch3);
+  animation: fadeIn 0.3s ease;
+}
+@keyframes fadeIn { from{opacity:0;transform:translateY(-3px)} to{opacity:1} }
+.ve-num { font-family: var(--mono); font-size: 13px; color: var(--blue3); min-width: 28px; }
+.ve-time { font-family: var(--mono); font-size: 13px; color: var(--ink4); min-width: 55px; }
+.ve-dist { font-family: var(--mono); font-size: 13px; color: var(--terra); min-width: 40px; }
+.ve-period { font-size: 14px; min-width: 18px; }
+.ve-text { font-family: var(--fell); font-style: italic; font-size: 14px; color: var(--ink2); flex: 1; line-height: 1.4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ── Chat estilo catálogo Borges ── */
+.chat-layout { display: flex; flex-direction: column; gap: 0; }
+.chat-messages {
+  min-height: 200px; max-height: 320px; overflow-y: auto;
+  border: 1px solid var(--parch3); padding: 0;
+}
+.chat-messages::-webkit-scrollbar { width: 4px; }
+.chat-messages::-webkit-scrollbar-thumb { background: var(--parch3); }
+
+.chat-msg {
+  display: flex; gap: 12px; padding: 10px 14px;
+  border-bottom: 1px solid var(--parch3);
+  animation: fadeIn 0.3s ease;
+  position: relative;
+}
+.chat-msg.user { background: var(--parch2); }
+.chat-msg.agent { background: var(--parch); }
+.chat-msg::before {
+  content: attr(data-idx);
+  position: absolute; left: 0; top: 0;
+  font-family: var(--mono); font-size: 11px; color: var(--blue4);
+  padding: 3px 5px; line-height: 1;
+}
+.msg-role {
+  font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em;
+  text-transform: uppercase; min-width: 60px; padding-top: 2px;
+  flex-shrink: 0;
+}
+.msg-role.user  { color: var(--terra); }
+.msg-role.agent { color: var(--blue); }
+.msg-body {
+  font-family: var(--fell); font-size: 15px; line-height: 1.7;
+  color: var(--ink2); flex: 1;
+}
+.typing-dots { display: flex; gap: 4px; align-items: center; padding: 4px 0; }
+.typing-dots span { width: 4px; height: 4px; border-radius: 50%; background: var(--blue3); animation: tdot 1.2s ease-in-out infinite; }
+.typing-dots span:nth-child(2){ animation-delay:.2s; }
+.typing-dots span:nth-child(3){ animation-delay:.4s; }
+@keyframes tdot { 0%,80%,100%{transform:translateY(0)} 40%{transform:translateY(-5px)} }
+
+.tool-note {
+  font-family: var(--mono); font-size: 11px; letter-spacing: 0.06em;
+  color: var(--terra3); margin-bottom: 4px; display: block;
+}
+
+.chat-input-area {
+  border: 1px solid var(--parch3); border-top: none;
+  display: flex; align-items: stretch;
+}
+.chat-input {
+  flex: 1; padding: 10px 14px;
+  font-family: var(--fell); font-style: italic; font-size: 16px;
+  color: var(--ink); background: transparent; border: none; outline: none;
+  line-height: 1.5;
+}
+.chat-input::placeholder { color: var(--ink4); }
+.chat-send {
+  font-family: var(--mono); font-size: 11px; font-weight: 700;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  background: var(--blue); color: var(--parch);
+  border: none; padding: 0 16px; cursor: pointer; transition: background 0.15s;
+  border-left: 1px solid var(--blue2);
+}
+.chat-send:hover { background: var(--ink); }
+.chat-send:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.quick-queries {
+  display: flex; gap: 6px; flex-wrap: wrap; padding: 8px 0;
+  border-top: 1px solid var(--parch3); margin-top: 4px;
+}
+.qq {
+  font-family: var(--mono); font-size: 11px; letter-spacing: 0.06em;
+  border: 1px solid var(--parch3); padding: 3px 8px; cursor: pointer;
+  color: var(--ink4); background: transparent; transition: all 0.15s;
+}
+.qq:hover { border-color: var(--terra); color: var(--terra); background: rgba(139,64,32,0.04); }
+
+/* ── MQTT Log ── */
+.mqtt-log { max-height: 180px; overflow-y: auto; font-family: var(--mono); font-size: 13px; display: flex; flex-direction: column; gap: 2px; }
+.mqtt-log::-webkit-scrollbar { width: 3px; }
+.mqtt-log::-webkit-scrollbar-thumb { background: var(--parch3); }
+.le { display: flex; gap: 8px; padding: 2px 4px; border-bottom: 0.5px solid var(--parch3); }
+.ltag { font-size: 10px; padding: 1px 4px; min-width: 26px; text-align: center; border: 1px solid currentColor; }
+.tpub  { color: var(--blue2); }
+.tsub  { color: var(--ink4); }
+.talrt { color: var(--terra); }
+.tcmd  { color: var(--gold); }
+.tprox { color: var(--blue3); }
+.ltime   { color: var(--ink4); min-width: 60px; }
+.ltopic  { color: var(--ink3); min-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lpay    { color: var(--ink); opacity: 0.7; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+
+/* Footer */
+footer {
+  margin-top: 24px; padding: 10px 0; border-top: 2px solid var(--ink);
+  display: flex; justify-content: space-between; align-items: center;
+}
+.footer-l { font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em; color: var(--ink4); text-transform: uppercase; }
+.footer-r { font-family: var(--fell); font-style: italic; font-size: 14px; color: var(--ink4); }
+
+/* Coord margin notes */
+.margin-note {
+  font-family: var(--mono); font-size: 10px; color: var(--blue4);
+  letter-spacing: 0.08em; margin-bottom: 4px;
+}
+
+@media(max-width:700px) {
+  .sensor-grid { grid-template-columns: 1fr 1fr; }
+  .twin-layout, .prox-layout, .twin-data-row { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+<div class="corner-mark tl"></div>
+<div class="corner-mark tr"></div>
+<div class="corner-mark bl"></div>
+<div class="corner-mark br"></div>
+
+<div class="app">
+
+<!-- HEADER -->
+<header>
+  <div class="header-top">
+    <div class="header-emblem">
+      <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="20" cy="20" r="16" stroke="#2a3f6f" stroke-width="0.8"/>
+        <circle cx="20" cy="20" r="10" stroke="#2a3f6f" stroke-width="0.5"/>
+        <circle cx="20" cy="20" r="5" stroke="#8b4020" stroke-width="0.8"/>
+        <line x1="20" y1="4" x2="20" y2="36" stroke="#2a3f6f" stroke-width="0.5" opacity="0.4"/>
+        <line x1="4" y1="20" x2="36" y2="20" stroke="#2a3f6f" stroke-width="0.5" opacity="0.4"/>
+        <path d="M20 14 Q16 18 20 24 Q24 18 20 14Z" fill="#2a3f6f" opacity="0.6"/>
+      </svg>
+    </div>
+    <div class="header-titles">
+      <h1>The <em>Labyrinthine</em> Botanical Twin</h1>
+      <div class="header-sub">Modulor × Borges &nbsp;·&nbsp; Plataforma de Gemelo Digital &nbsp;·&nbsp; Vers une Architecture Botanique</div>
+    </div>
+    <div class="header-badges">
+      <div class="hbadge active"><div class="live-dot"></div> Sensores</div>
+      <div class="hbadge active"><div class="live-dot"></div> Gemelo</div>
+      <div class="hbadge terra"><div class="live-dot"></div> Voz</div>
+      <div class="hbadge" id="hbadge-mqtt" style="color:var(--gold2)"><div class="live-dot"></div> MQTT · Conectando…</div>
+    </div>
+  </div>
+</header>
+
+<!-- ══════════ I. ARCHIVO DE SENSORES ══════════ -->
+<div class="accord open" id="ac-sensors">
+  <div class="accord-header" onclick="toggleAccord('ac-sensors')">
+    <span class="accord-num">[I]</span>
+    <span class="accord-title">Archivo de Sensores</span>
+    <span class="accord-subtitle">Telemetría en tiempo real · ESP32 · MQTT</span>
+    <span class="accord-toggle">+</span>
+  </div>
+  <div class="accord-body">
+    <div class="margin-note">PLANO REF. S-01 · MODULOR OPTIMAL RANGE ANALYSIS</div>
+    <div class="sensor-top">
+      <div class="sensor-grid">
+        <div class="sensor-cell" data-coord="S1·Δt">
+          <div class="sc-label">Temperatura</div>
+          <div class="sc-val" id="v-temp">--<span class="unit">°C</span></div>
+          <div class="sc-annot" id="a-temp">—</div>
+          <div class="sc-bar"><div class="sc-fill" id="b-temp" style="background:var(--terra2);width:0%"></div></div>
+          <div class="sc-status" id="s-temp">DHT22</div>
+        </div>
+        <div class="sensor-cell" data-coord="S2·φh">
+          <div class="sc-label">Humedad Aire</div>
+          <div class="sc-val" id="v-hum">--<span class="unit">%</span></div>
+          <div class="sc-annot" id="a-hum">—</div>
+          <div class="sc-bar"><div class="sc-fill" id="b-hum" style="background:var(--blue3);width:0%"></div></div>
+          <div class="sc-status">DHT22 · Higrostato</div>
+        </div>
+        <div class="sensor-cell" data-coord="S3·Πr">
+          <div class="sc-label">Movimiento</div>
+          <div class="sc-val" id="v-pir" style="font-size:22px; transition:color 0.4s">--</div>
+          <div class="sc-annot" id="a-pir">—</div>
+          <div class="sc-bar"><div class="sc-fill" id="b-pir" style="background:var(--terra2);width:0%"></div></div>
+          <div class="sc-status" id="s-pir">HC-SR04 · Distancia</div>
+        </div>
+        <div class="sensor-cell" data-coord="S4·σs">
+          <div class="sc-label">Humedad Suelo</div>
+          <div class="sc-val" id="v-soil">--<span class="unit">%</span></div>
+          <div class="sc-annot" id="a-soil">—</div>
+          <div class="sc-bar"><div class="sc-fill" id="b-soil" style="background:var(--blue2);width:0%"></div></div>
+          <div class="sc-status" id="s-soil">Capacitivo</div>
+        </div>
+      </div>
+      <div class="spark-row">
+        <canvas id="spark" height="38"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ II. GEMELO DIGITAL ══════════ -->
+<div class="accord open" id="ac-twin">
+  <div class="accord-header" onclick="toggleAccord('ac-twin')">
+    <span class="accord-num">[II]</span>
+    <span class="accord-title">Gemelo Digital — Avatar Expresivo</span>
+    <span class="accord-subtitle">Representación botánica · Estados reactivos · TTS</span>
+    <span class="accord-toggle">+</span>
+  </div>
+  <div class="accord-body">
+    <div class="margin-note">PLANO REF. T-02 · SUJETO BOTÁNICO — ESTUDIO DE ESTADOS</div>
+    <div class="twin-layout">
+
+      <!-- Avatar -->
+      <div class="avatar-zone">
+        <div class="blueprint-frame" data-label="GEMELO-01 · SUJETO BOTÁNICO">
+          <svg id="plant-svg" viewBox="0 0 160 200" xmlns="http://www.w3.org/2000/svg">
+            <g id="particles"></g>
+
+            <!-- Maceta estilo blueprinta -->
+            <path d="M48 162 L56 192 L104 192 L112 162 Z" fill="#8a6840" stroke="#6a4820" stroke-width="0.8"/>
+            <ellipse cx="80" cy="162" rx="34" ry="8" fill="#9a7848"/>
+            <ellipse cx="80" cy="161" rx="30" ry="6" fill="#3a2010"/>
+            <g id="cracks" opacity="0">
+              <line x1="68" y1="159" x2="74" y2="162" stroke="#5a3010" stroke-width="0.7"/>
+              <line x1="84" y1="160" x2="90" y2="162" stroke="#5a3010" stroke-width="0.7"/>
+            </g>
+
+            <g id="plant-body" style="transform-origin:80px 150px">
+              <!-- Tallo -->
+              <path d="M80 160 Q76 138 80 112" stroke="#3a6828" stroke-width="4.5" fill="none" stroke-linecap="round" id="stem"/>
+              <!-- Hoja izq -->
+              <g id="leaf-left" style="transform-origin:70px 138px">
+                <ellipse cx="58" cy="132" rx="22" ry="10" fill="#3aaa50" stroke="#2a8038" stroke-width="0.5" transform="rotate(-35,58,132)"/>
+              </g>
+              <!-- Hoja der -->
+              <g id="leaf-right" style="transform-origin:90px 126px">
+                <ellipse cx="104" cy="120" rx="22" ry="10" fill="#30a048" stroke="#208038" stroke-width="0.5" transform="rotate(30,104,120)"/>
+              </g>
+              <!-- Hoja top -->
+              <g id="leaf-top" style="transform-origin:80px 106px">
+                <ellipse cx="80" cy="100" rx="12" ry="7" fill="#50cc70" stroke="#30a050" stroke-width="0.5"/>
+              </g>
+
+              <!-- Cabeza -->
+              <circle cx="80" cy="90" r="30" fill="#28a040" id="body-circle"/>
+              <circle cx="66" cy="95" r="6" fill="#ff8888" opacity="0" id="cheek-l"/>
+              <circle cx="94" cy="95" r="6" fill="#ff8888" opacity="0" id="cheek-r"/>
+
+              <!-- Ojos -->
+              <circle cx="72" cy="85" r="7" fill="white" id="ew-l"/>
+              <circle cx="88" cy="85" r="7" fill="white" id="ew-r"/>
+              <circle cx="74" cy="85" r="3.5" fill="#1a2e1a" id="pupil-l"/>
+              <circle cx="90" cy="85" r="3.5" fill="#1a2e1a" id="pupil-r"/>
+              <circle cx="75.5" cy="83.5" r="1.2" fill="white"/>
+              <circle cx="91.5" cy="83.5" r="1.2" fill="white"/>
+              <!-- Párpados -->
+              <rect x="65" y="78" width="14" height="7" rx="1.5" fill="#28a040" id="lid-l" opacity="0"/>
+              <rect x="81" y="78" width="14" height="7" rx="1.5" fill="#28a040" id="lid-r" opacity="0"/>
+
+              <!-- Boca -->
+              <path d="M70 98 Q80 107 90 98" stroke="#1a3a1a" stroke-width="2" fill="none" stroke-linecap="round" id="mouth"/>
+
+              <!-- Gotas sudor -->
+              <g id="sweat-drops" opacity="0">
+                <ellipse cx="105" cy="74" rx="4" ry="5.5" fill="#60ccff" opacity="0.85"/>
+                <ellipse cx="111" cy="84" rx="3" ry="4.5" fill="#60ccff" opacity="0.7"/>
+                <ellipse cx="52" cy="78" rx="3.5" ry="5" fill="#60ccff" opacity="0.75"/>
+              </g>
+              <!-- Líneas frío -->
+              <g id="cold-lines" opacity="0">
+                <line x1="62" y1="68" x2="62" y2="63" stroke="#88bbdd" stroke-width="1.5" stroke-linecap="round"/>
+                <line x1="80" y1="64" x2="80" y2="59" stroke="#88bbdd" stroke-width="1.5" stroke-linecap="round"/>
+                <line x1="98" y1="68" x2="98" y2="63" stroke="#88bbdd" stroke-width="1.5" stroke-linecap="round"/>
+              </g>
+              <!-- Corazón -->
+              <text x="80" y="74" text-anchor="middle" font-size="13" id="heart" opacity="0">💚</text>
+            </g>
+          </svg>
+        </div>
+
+        <div class="state-stamp stamp-ok" id="state-stamp">● Óptimo</div>
+
+        <div class="speech-box" id="speech-box"></div>
+
+        <div class="avatar-btns" style="margin-top:6px">
+          <button class="btn-arch blue" onclick="speak()">▶ Hablar</button>
+          <button class="btn-arch" onclick="greet()">◈ Saludar</button>
+          <button class="btn-arch" onclick="reportStatus()">◉ Informe de estado</button>
+          <button class="btn-arch terra" onclick="triggerWater()">◆ Riego manual</button>
+          <button class="btn-arch" onclick="toggleVoice()" id="btn-voice">○ Silenciar voz</button>
+        </div>
+      </div>
+
+      <!-- Datos gemelo -->
+      <div class="twin-right">
+        <div class="twin-data-row">
+          <div class="data-card">
+            <div class="data-card-title">Estado Actual</div>
+            <div class="data-card-body" id="twin-status-text">Leyendo sensores...</div>
+          </div>
+          <div class="data-card">
+            <div class="data-card-title">Estadísticas de Visitas</div>
+            <div class="visit-stats">
+              <div class="vstat"><div class="vstat-val" id="stat-visits">0</div><div class="vstat-label">Visitas</div></div>
+              <div class="vstat"><div class="vstat-val" id="stat-mindist" style="font-size: 23px">—</div><div class="vstat-label">Min cm</div></div>
+              <div class="vstat"><div class="vstat-val" id="stat-riegos">0</div><div class="vstat-label">Riegos</div></div>
+            </div>
+          </div>
+        </div>
+        <div class="data-card">
+          <div class="data-card-title">Registro de Interacciones Recientes</div>
+          <div class="visit-log" id="visit-log-twin">
+            <div style="font-family:var(--fell);font-style:italic;font-size: 14px;color:var(--ink4);padding:8px 0">Aguardando la primera aproximación...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ III. SENSOR DE PROXIMIDAD ══════════ -->
+<div class="accord open" id="ac-prox">
+  <div class="accord-header" onclick="toggleAccord('ac-prox')">
+    <span class="accord-num">[III]</span>
+    <span class="accord-title">Sensor de Proximidad — HC-SR04</span>
+    <span class="accord-subtitle">Registro de visitas · Saludos contextuales · GPIO5/18</span>
+    <span class="accord-toggle">+</span>
+  </div>
+  <div class="accord-body">
+    <div class="margin-note">PLANO REF. P-03 · DETECCIÓN DE PRESENCIA HUMANA · UMBRAL: 60 CM</div>
+    <div class="prox-layout">
+      <div class="prox-meter">
+        <div style="display:flex;align-items:flex-end;gap:8px">
+          <div>
+            <div style="font-family:var(--mono);font-size: 11px;letter-spacing:0.1em;color:var(--ink4);margin-bottom:3px">DISTANCIA DETECTADA</div>
+            <div style="display:flex;align-items:baseline;gap:6px">
+              <div class="prox-val-big" id="prox-val">---</div>
+              <div class="prox-unit-small">cm</div>
+            </div>
+          </div>
+          <div style="font-size: 41px;margin-bottom:4px" id="prox-icon">🚶</div>
+        </div>
+        <div class="prox-radial"><div class="prox-radial-fill" id="prox-bar" style="width:0%;background:var(--blue3)"></div></div>
+        <div class="prox-note" id="prox-note">Sin movimiento detectado</div>
+        <div style="font-family:var(--mono);font-size: 10px;color:var(--blue4);margin-top:4px">TRIG·GPIO5 · ECHO·GPIO18 · TOPIC: jardin/proximidad</div>
+      </div>
+
+      <div class="prox-sim">
+        <div class="sim-label">Simulador HC-SR04</div>
+        <div class="sim-slider-row">
+          <span style="font-family:var(--mono);font-size: 11px;color:var(--ink4)">Dist.</span>
+          <input type="range" min="5" max="300" value="300" id="prox-slider" oninput="simProx(this.value)">
+          <span class="sim-val" id="prox-sv">300 cm</span>
+        </div>
+        <div class="sim-btns">
+          <button class="btn-arch blue sim-btns" onclick="simProxInstant(30)" style="flex:1;justify-content:center">↓ Acercarme (30cm)</button>
+          <button class="btn-arch sim-btns" onclick="simProxInstant(300)" style="flex:1;justify-content:center">↑ Alejarme</button>
+        </div>
+
+        <div class="data-card" style="margin-top:8px">
+          <div class="data-card-title">Registro de Visitas</div>
+          <div class="visit-log" id="visit-log" style="max-height:140px;overflow-y:auto">
+            <div style="font-family:var(--fell);font-style:italic;font-size: 14px;color:var(--ink4);padding:6px 0">El laberinto aguarda al caminante...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ IV. CATÁLOGO / ORÁCULO (CHAT) ══════════ -->
+<div class="accord open" id="ac-chat">
+  <div class="accord-header" onclick="toggleAccord('ac-chat')">
+    <span class="accord-num">[IV]</span>
+    <span class="accord-title">Catálogo & Oráculo — Consulta al Agente</span>
+    <span class="accord-subtitle">Biblioteca Botánica Infinita · Claude · Datos en tiempo real</span>
+    <span class="accord-toggle">+</span>
+  </div>
+  <div class="accord-body">
+    <div class="margin-note">PLANO REF. C-04 · DIÁLOGO CON LA INTELIGENCIA ARTIFICIAL · ARCHIVO ACTIVO</div>
+    <div class="quick-queries">
+      <button class="qq" onclick="sendQuick('¿Cómo se encuentra la planta en este momento?')">§ Estado actual</button>
+      <button class="qq" onclick="sendQuick('¿La planta tuvo calor o frío hoy? ¿Cuántas horas de luz recibió?')">§ Informe del día</button>
+      <button class="qq" onclick="sendQuick('¿Necesita agua? Decidí vos.')">§ ¿Necesita agua?</button>
+      <button class="qq" onclick="sendQuick('Regá la planta si lo considerás necesario.')">§ Regar si hace falta</button>
+      <button class="qq" onclick="sendQuick('¿Cuántas veces me acerqué hoy a la planta?')">§ Mis visitas</button>
+    </div>
+    <div class="chat-messages" id="chat-messages"></div>
+    <div class="chat-input-area">
+      <input class="chat-input" id="chat-input" placeholder="Consultar el archivo botánico..." onkeydown="if(event.key==='Enter')sendChat()">
+      <button class="chat-send" id="btn-send" onclick="sendChat()">Consultar →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ V. PROTOCOLO MQTT ══════════ -->
+<div class="accord" id="ac-mqtt">
+  <div class="accord-header" onclick="toggleAccord('ac-mqtt')">
+    <span class="accord-num">[V]</span>
+    <span class="accord-title">Protocolo MQTT — Registro de Mensajes</span>
+    <span class="accord-subtitle">Broker · Tópicos · Pub/Sub · Oculto por defecto</span>
+    <span class="accord-toggle">+</span>
+  </div>
+  <div class="accord-body">
+    <div class="margin-note">PLANO REF. M-05 · TRÁFICO DE RED · MOSQUITTO BROKER</div>
+    <div class="mqtt-log" id="mqtt-log"></div>
+  </div>
+</div>
+
+<footer>
+  <div class="footer-l">Modulor × Borges &nbsp;·&nbsp; Plataforma v2.0 &nbsp;·&nbsp; <span id="footer-time">—</span></div>
+  <div class="footer-r">"El jardín de los senderos que se bifurcan" — J.L. Borges</div>
+</footer>
+
+</div><!-- app -->
+
+<script>
+// ══════════ CONFIG ══════════
+// BOTANICAL_CONFIG se carga desde config.js (script tag anterior)
+const CFG = (typeof BOTANICAL_CONFIG !== 'undefined') ? BOTANICAL_CONFIG : {
+  claudeApiKey: '',
+  claudeModel:  'anthropic/claude-haiku-4.5',
+  mqttWsUrl:    'ws://localhost:9001',
+  mqttUser:     '',
+  mqttPass:     '',
+  umbralSueloBajo: 25,
+  umbralTempAlta:  35,
+  umbralTempBaja:  10,
+  umbralProxCm:    60,
+};
+
+// ══════════ ESTADO ══════════
+const S = {
+  temp:0, hum:0, soil:0, dist:0,
+  riegos:0, historial:[], visits:[], visitCount:0, minDist:999,
+  state:'idle', speaking:false, voiceEnabled:true,
+  waterTimer:null, lastGreetTime:0, lastStateMsgTime:0, lastVisitTime:0, mqttConnected:false
+};
+const NEAR_CM = CFG.umbralProxCm || 60;
+const GREET_CD = 4 * 60 * 60 * 1000;
+const STATE_MSG_CD = 60 * 1000;
+const VISIT_CD = 15 * 1000;
+let proxNear = false, proxNearStart = null;
+let animFrame = null, blinkIv = null, particleIv = null, shakeIv = null;
+const chatHistory = [];
+let msgIndex = 1;
+
+// ══════════ MQTT WEBSOCKET ══════════
+let mqttClient = null;
+
+function initMQTT() {
+  updateConnBadge('connecting');
+  const opts = { clientId: 'botanical-twin-browser-' + Math.random().toString(16).slice(2) };
+  if (CFG.mqttUser) { opts.username = CFG.mqttUser; opts.password = CFG.mqttPass; }
+
+  mqttClient = mqtt.connect(CFG.mqttWsUrl, opts);
+
+  mqttClient.on('connect', () => {
+    S.mqttConnected = true;
+    updateConnBadge('online');
+    console.log('[MQTT] Conectado a', CFG.mqttWsUrl);
+    mqttClient.subscribe(['jardin/sensores','jardin/alertas','jardin/eventos','jardin/proximidad']);
+    mqttLog('jardin/$SYS','{"estado":"browser_conectado"}','sub');
+  });
+
+  mqttClient.on('error',     e  => { updateConnBadge('error');   console.error('[MQTT]', e.message); });
+  mqttClient.on('reconnect', () => { updateConnBadge('connecting'); });
+  mqttClient.on('offline',   () => { S.mqttConnected=false; updateConnBadge('offline'); });
+
+  mqttClient.on('message', (topic, raw) => {
+    let data;
+    try { data = JSON.parse(raw.toString()); } catch { return; }
+
+    if (topic === 'jardin/sensores') {
+      const r = {
+        temp:  Number(data.temp ?? S.temp),
+        hum:   Number(data.hum ?? S.hum),
+        soil:  Number(data.suelo ?? data.soil ?? S.soil),
+        dist:  Number(data.dist ?? data.prox ?? data.distancia_cm ?? data.distancia ?? S.dist),
+        ts: new Date().toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit',second:'2-digit'})
+      };
+      S.temp=r.temp; S.hum=r.hum; S.soil=r.soil; S.dist=r.dist;
+      S.historial.push(r); if(S.historial.length>60) S.historial.shift();
+      renderSensors(r); decideState(r); drawSpark();
+      mqttLog('jardin/sensores', raw.toString(), 'pub');
+      document.getElementById('footer-time').textContent = new Date().toLocaleTimeString('es-AR');
+    }
+
+    if (topic === 'jardin/alertas') {
+      mqttLog('jardin/alertas', raw.toString(), 'alert');
+    }
+
+    if (topic === 'jardin/eventos') {
+      mqttLog('jardin/eventos', raw.toString(), 'sub');
+      if (data.evento === 'riego_completado') {
+        clearInterval(S.waterTimer); S.waterTimer=null;
+        setTimeout(()=>applyState('idle'), 1200);
+      }
+      if (data.evento === 'persona_detectada') {
+        onPersonNear(data.distancia ?? 40);
+      }
+    }
+
+    if (topic === 'jardin/proximidad') {
+      mqttLog('jardin/proximidad', raw.toString(), 'prox');
+      const dist = Number(data.distancia_cm ?? data.dist ?? data.prox ?? 0);
+      if (dist > 0) {
+        const rr = { temp:S.temp, hum:S.hum, soil:S.soil, dist, ts: new Date().toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit',second:'2-digit'}) };
+        S.dist = dist;
+        renderSensors(rr);
+      }
+      if (data.cerca) onPersonNear(dist || 50);
+    }
+  });
+}
+
+function updateConnBadge(status) {
+  const b = document.getElementById('hbadge-mqtt');
+  if (!b) return;
+  const labels = { online:'MQTT · Online', connecting:'MQTT · Conectando…', offline:'MQTT · Offline', error:'MQTT · Error' };
+  const colors = { online:'var(--blue)', connecting:'var(--gold2)', offline:'var(--terra)', error:'var(--terra)' };
+  b.textContent = labels[status] || status;
+  b.style.color = colors[status] || 'var(--ink4)';
+}
+
+function pubMQTT(topic, payload) {
+  if (mqttClient && S.mqttConnected) {
+    mqttClient.publish(topic, JSON.stringify(payload));
+  }
+}
+
+// ══════════ FRASES ══════════
+function period() {
+  const h = new Date().getHours();
+  return h < 12 ? 'mañana' : h < 19 ? 'tarde' : 'noche';
+}
+const GREETS = {
+  mañana:['¡Buenos días! La luz matinal me nutre. ¿Cómo amaneciste?','¡Buen día! Mis hojas ya absorben los primeros fotones del alba.'],
+  tarde:['¡Buenas tardes! La fotosíntesis está en pleno apogeo.','¡Hola! Qué bueno que pasaste. Las tardes son mi momento favorito.'],
+  noche:['¡Buenas noches! Ya bajo mi metabolismo, pero me alegra verte.','¡Hola nocturno! A esta hora descanso mis procesos celulares.']
+};
+const STATE_SAY = {
+  hot:['¡Uf, calor insoportable! ¡Transpiro como si fuera el Sahara! 😰','¡Sácame del sol, por favor! ¡Me derrito!'],
+  cold:['B-b-brrrr... ¡Me congelo las raíces! ❄️','¡Frío terrible! ¡Cierren esa ventana!'],
+  thirsty:['¡Agua, por favor! ¡Mi suelo está reseco! 🏜️','¡Días sin agua! ¡Mis raíces imploran!'],
+  watered:['¡Ahhh, delicia! ¡Renazco con cada gota! 💧','¡Gracias! ¡Exactamente lo que necesitaba!'],
+  idle:['Todo en orden. Temperatura y humedad en rangos normales.','Absorbiendo nutrientes tranquilamente. Todo bien.']
+};
+const rand = a => a[Math.floor(Math.random()*a.length)];
+
+function oracleStateText(state) {
+  const t = Number.isFinite(S.temp) ? S.temp.toFixed(1) : "--";
+  const soil = Number.isFinite(S.soil) ? Math.round(S.soil) : "--";
+
+  const lines = {
+    idle: [
+      "El invernadero sigue su geometria serena; las variables respiran en equilibrio.",
+      "En este instante, el jardin no se bifurca: temperatura y humedad avanzan en orden.",
+      "Las magnitudes se sostienen en una calma exacta; el suelo y el aire no discuten."
+    ],
+    hot: [
+      `A ${t}°C, la planta roza un mediodia excesivo; conviene regalarle sombra.`,
+      `El calor asciende hasta ${t}°C y el tallo siente el rigor del verano.`,
+      `La temperatura, en ${t}°C, exige prudencia hidrica y un margen de sombra.`
+    ],
+    cold: [
+      `Con ${t}°C, el metabolismo se vuelve lento, como un pasillo en penumbra.`,
+      `El frio marca ${t}°C; la planta pide resguardo y paciencia.`,
+      `A ${t}°C, la savia avanza despacio; protege el entorno termico.`
+    ],
+    thirsty: [
+      `El suelo, en ${soil}%, insinua sed: conviene un riego breve y atento.`,
+      `Con humedad de suelo en ${soil}%, las raices buscan agua en silencio.`,
+      `El sustrato marca ${soil}% y reclama una correccion hidrica urgente.`
+    ],
+    watered: [
+      "El riego concluyo: el suelo recompone su memoria de agua.",
+      "La hidratacion fue aplicada; ahora toca observar absorcion y deriva.",
+      "Tras el riego, el sistema entra en reposo y espera la respuesta del sustrato."
+    ],
+    greeting: [
+      "Una presencia cruza el umbral del laberinto; el gemelo responde.",
+      "La distancia se acorta y la planta reconoce al visitante.",
+      "El sensor confirma cercania; comienza el saludo del invernadero."
+    ],
+    talking: [
+      "El oraculo botánico habla y traduce cifras en relato.",
+      "La voz del gemelo convierte telemetria en consejo.",
+      "En este momento, el sistema articula su estado en palabras."
+    ]
+  };
+
+  return rand(lines[state] || ["El archivo botanico guarda silencio."]);
+}
+
+function oracleAnnotTemp(temp) {
+  if (temp > 34) return rand(["El sol domina el plano", "La cupula termica aprieta", "Calor en ascenso sobre el jardin"]);
+  if (temp < 12) return rand(["Frio en los corredores", "La noche enfria la savia", "Termica baja en el laberinto"]);
+  return rand(["Modulor optimo", "Geometria termica estable", "Rango de confort vegetal"]);
+}
+
+function oracleAnnotHum(hum) {
+  if (hum > 80) return rand(["Aire cargado de humedad", "Atmosfera densa y humeda", "Terracota saturada"]);
+  if (hum < 30) return rand(["Aire seco en la camara", "Humedad tenue, borde arido", "Balance seco"]);
+  return rand(["Terracota balance", "Higrometria en orden", "Pulso de aire estable"]);
+}
+
+function oracleAnnotSoil(soil) {
+  if (soil < 25) return rand(["El desierto aguarda", "Raices piden agua", "Sustrato en umbral seco"]);
+  if (soil > 80) return rand(["Saturacion total", "Sustrato cargado", "Exceso hidrico potencial"]);
+  return rand(["Equilibrio hidrico", "Sustrato en balance", "Humedad de suelo estable"]);
+}
+
+function oracleAnnotMotion(active) {
+  return active
+    ? rand(["Movimiento en el laberinto", "Un visitante roza el umbral", "Presencia confirmada por distancia"])
+    : rand(["Sin movimiento cercano", "El corredor permanece vacio", "Ningun visitante en rango"]);
+}
+
+// ══════════ TTS ══════════
+let voiceTo = null;
+function speak(text, force=false) {
+  if (!S.voiceEnabled && !force) return;
+  if (!text) text = rand(STATE_SAY[S.state] || STATE_SAY.idle);
+  window.speechSynthesis.cancel(); clearTimeout(voiceTo);
+  showBubble(text); setBodyState('talking');
+  const utt = new SpeechSynthesisUtterance(text);
+  utt.lang='es-AR'; utt.rate=0.92; utt.pitch=1.08; utt.volume=1;
+  const v = speechSynthesis.getVoices().find(x=>x.lang.startsWith('es'));
+  if (v) utt.voice = v;
+  utt.onend = () => { hideBubble(); setTimeout(()=>applyState(S.state),400); };
+  S.speaking = true;
+  speechSynthesis.speak(utt);
+  voiceTo = setTimeout(()=>{ hideBubble(); applyState(S.state); }, text.length*75+2000);
+}
+function greet() { const t=rand(GREETS[period()]); setBodyState('greeting'); speak(t,true); }
+function reportStatus() {
+  const msgs = [];
+  if (S.temp>32) msgs.push(`temperatura de ${S.temp.toFixed(1)} grados, excesivo`);
+  else if (S.temp<12) msgs.push(`apenas ${S.temp.toFixed(1)} grados, demasiado frío`);
+  if (S.soil<25) msgs.push(`suelo al ${Math.round(S.soil)}%, estoy sedienta`);
+  if (!msgs.length) msgs.push('condiciones óptimas');
+  speak(`Estado actual: ${msgs.join('; ')}. ${S.riegos?`Regada ${S.riegos} vez hoy.`:''}`, true);
+}
+function toggleVoice() {
+  S.voiceEnabled = !S.voiceEnabled;
+  speechSynthesis.cancel();
+  document.getElementById('btn-voice').textContent = S.voiceEnabled ? '○ Silenciar voz' : '● Activar voz';
+}
+function showBubble(t) {
+  const el = document.getElementById('speech-box');
+  el.textContent = t; el.classList.add('visible');
+}
+function hideBubble() { document.getElementById('speech-box').classList.remove('visible'); S.speaking=false; }
+
+// ══════════ ESTADOS AVATAR ══════════
+const STAMPS = { idle:'● Óptimo', hot:'▲ Calor Extremo', cold:'▼ Frío Intenso', thirsty:'◈ Sedienta', watered:'◆ Regada', greeting:'◉ Saludando', talking:'◎ Hablando' };
+const STAMP_CLS = { idle:'stamp-ok', hot:'stamp-hot', cold:'stamp-cold', thirsty:'stamp-thirst', watered:'stamp-water', greeting:'stamp-greet', talking:'stamp-ok' };
+
+function applyState(state) {
+  if (S.speaking && state !== 'talking') return;
+  S.state = state;
+  clearInterval(blinkIv); clearInterval(particleIv); clearInterval(shakeIv); cancelAnimationFrame(animFrame);
+  const pb = document.getElementById('plant-body');
+  pb.style.transform = ''; pb.style.animation = '';
+
+  const body=document.getElementById('body-circle'), mouth=document.getElementById('mouth'),
+        sw=document.getElementById('sweat-drops'), cold=document.getElementById('cold-lines'),
+        heart=document.getElementById('heart'), cracks=document.getElementById('cracks'),
+        cl=document.getElementById('cheek-l'), cr=document.getElementById('cheek-r'),
+        ll=document.getElementById('leaf-left'), lr=document.getElementById('leaf-right');
+
+  [sw,cold,heart,cracks,cl,cr].forEach(e=>e.setAttribute('opacity','0'));
+  ll.style.transform=''; lr.style.transform='';
+  document.getElementById('particles').innerHTML='';
+
+  blinkIv = setInterval(doBlink, 3200+Math.random()*2000);
+
+  switch(state) {
+    case 'idle':
+      body.setAttribute('fill','#28a040');
+      mouth.setAttribute('d','M70 98 Q80 107 90 98');
+      startBob(); break;
+    case 'hot':
+      body.setAttribute('fill','#8a3020');
+      mouth.setAttribute('d','M72 96 Q80 92 88 96');
+      sw.setAttribute('opacity','1'); ll.style.transform='rotate(15deg)'; lr.style.transform='rotate(-12deg)';
+      startHotDrips(); startBob(); break;
+    case 'cold':
+      body.setAttribute('fill','#2040a0');
+      mouth.setAttribute('d','M74 99 Q80 95 86 99');
+      cold.setAttribute('opacity','0.8'); startShiver(); break;
+    case 'thirsty':
+      body.setAttribute('fill','#7a7020');
+      mouth.setAttribute('d','M74 100 Q80 95 86 100');
+      cracks.setAttribute('opacity','1'); ll.style.transform='rotate(24deg) translateY(5px)'; lr.style.transform='rotate(-18deg) translateY(5px)';
+      startBob(0.3); break;
+    case 'watered':
+      body.setAttribute('fill','#1a8050');
+      mouth.setAttribute('d','M66 96 Q80 110 94 96');
+      heart.setAttribute('opacity','1'); cl.setAttribute('opacity','0.5'); cr.setAttribute('opacity','0.5');
+      startWaterParticles(); startHappyBounce(); break;
+    case 'greeting':
+      body.setAttribute('fill','#28a040');
+      mouth.setAttribute('d','M68 96 Q80 108 92 96');
+      cl.setAttribute('opacity','0.4'); cr.setAttribute('opacity','0.4');
+      startWave(); break;
+    case 'talking':
+      body.setAttribute('fill','#28a040');
+      startBob(); startTalkMouth(); break;
+  }
+
+  const stamp = document.getElementById('state-stamp');
+  stamp.textContent = STAMPS[state]||'●';
+  stamp.className = 'state-stamp '+(STAMP_CLS[state]||'stamp-ok');
+
+  document.getElementById('twin-status-text').textContent = oracleStateText(state);
+}
+function setBodyState(s) { applyState(s); }
+
+// ── Animaciones ──
+function doBlink() {
+  const l=document.getElementById('lid-l'), r=document.getElementById('lid-r');
+  l.setAttribute('opacity','1'); r.setAttribute('opacity','1');
+  setTimeout(()=>{ l.setAttribute('opacity','0'); r.setAttribute('opacity','0'); },110);
+}
+let bobA=0;
+function startBob(sc=1) {
+  const pb=document.getElementById('plant-body');
+  function f(){ bobA+=0.024; pb.style.transform=`translateY(${Math.sin(bobA)*2*sc}px)`; animFrame=requestAnimationFrame(f); }
+  f();
+}
+function startShiver() {
+  const pb=document.getElementById('plant-body'); let t=0;
+  shakeIv=setInterval(()=>{ t++; pb.style.transform=`translateX(${Math.sin(t*3)*3}px)`; },50);
+}
+function startHappyBounce() {
+  const pb=document.getElementById('plant-body'); let t=0;
+  function f(){ t+=0.08; pb.style.transform=`translateY(${-Math.abs(Math.sin(t))*9}px) scale(${1+Math.sin(t)*0.03})`; animFrame=requestAnimationFrame(f); }
+  f();
+}
+function startWave() {
+  const lr=document.getElementById('leaf-right'); let t=0;
+  function f(){ t+=0.1; lr.style.transform=`rotate(${Math.sin(t)*24}deg)`; if(t<Math.PI*4) animFrame=requestAnimationFrame(f); else { lr.style.transform=''; applyState('idle'); } }
+  f();
+}
+function startTalkMouth() {
+  const m=document.getElementById('mouth'); let t=0;
+  const iv=setInterval(()=>{ t++; m.setAttribute('d',Math.sin(t*0.8)>0?'M70 96 Q80 108 90 96':'M72 100 Q80 102 88 100'); if(!S.speaking) clearInterval(iv); },110);
+}
+function startHotDrips() {
+  particleIv=setInterval(()=>spawnP(['💧','💦'],'down',44,116,60,90),900);
+}
+function startWaterParticles() {
+  let c=0; particleIv=setInterval(()=>{ spawnP(['✨','💧','⭐','💚'],'up',50,110,70,110); c++; if(c>10)clearInterval(particleIv); },280);
+}
+function spawnP(emojis, dir, x1, x2, y1, y2) {
+  const g=document.getElementById('particles');
+  const el=document.createElementNS('http://www.w3.org/2000/svg','text');
+  el.setAttribute('x', x1+Math.random()*(x2-x1));
+  el.setAttribute('y', y1+Math.random()*(y2-y1));
+  el.setAttribute('font-size', 9+Math.random()*5);
+  el.setAttribute('text-anchor','middle');
+  el.textContent = emojis[Math.floor(Math.random()*emojis.length)];
+  g.appendChild(el);
+  const dy=dir==='up'?-50:45, dur=1200+Math.random()*500;
+  let s=null;
+  function a(ts){ if(!s)s=ts; const p=(ts-s)/dur; if(p>=1){g.removeChild(el);return;} el.setAttribute('transform',`translate(${(Math.random()-.5)*20*p},${dy*p})`); el.setAttribute('opacity',1-p); requestAnimationFrame(a); }
+  requestAnimationFrame(a);
+}
+
+// ══════════ RENDER SENSORES (datos reales del ESP8266) ══════════
+function renderSensors(d) {
+  // Temperatura
+  document.getElementById('v-temp').innerHTML=d.temp.toFixed(1)+'<span class="unit">°C</span>';
+  document.getElementById('b-temp').style.cssText=`width:${Math.min(100,(d.temp/50)*100)}%;background:${d.temp>34?'var(--terra2)':d.temp<12?'var(--blue3)':'var(--blue2)'}`;
+  document.getElementById('a-temp').textContent = oracleAnnotTemp(d.temp);
+  document.getElementById('s-temp').textContent=d.temp>34?'Temp. crítica alta':d.temp<12?'Temp. crítica baja':'Normal';
+
+  // Humedad aire
+  document.getElementById('v-hum').innerHTML=d.hum.toFixed(0)+'<span class="unit">%</span>';
+  document.getElementById('b-hum').style.width=d.hum+'%';
+  document.getElementById('a-hum').textContent = oracleAnnotHum(d.hum);
+
+  // Movimiento por HC-SR04
+  renderPIR(d.dist > 0 && d.dist < NEAR_CM, d.dist);
+
+  // Suelo
+  document.getElementById('v-soil').innerHTML=d.soil+'<span class="unit">%</span>';
+  document.getElementById('b-soil').style.cssText=`width:${d.soil}%;background:${d.soil<25?'var(--terra)':d.soil>80?'var(--blue3)':'var(--blue2)'}`;
+  document.getElementById('a-soil').textContent = oracleAnnotSoil(d.soil);
+  document.getElementById('s-soil').textContent=d.soil<25?'⚠ Seco':d.soil>80?'Saturado':'Óptimo';
+
+  // Proximidad (HC-SR04 si disponible)
+  if (d.dist > 0) {
+    const pct = Math.max(0, 100-(d.dist/300)*100);
+    const color = d.dist<30?'#8b4020':d.dist<80?'#2a3f6f':'#6a5e4c';
+    const proxVal = document.getElementById('prox-val');
+    if (proxVal) { proxVal.textContent=Math.round(d.dist); proxVal.style.color=color; }
+    const proxBar = document.getElementById('prox-bar');
+    if (proxBar) proxBar.style.cssText=`width:${pct}%;background:${color}`;
+    const proxNote = document.getElementById('prox-note');
+    if (proxNote) proxNote.textContent = d.dist < NEAR_CM ? `Presencia detectada a ${Math.round(d.dist)} cm` : 'Sin movimiento en el laberinto';
+    const proxIcon = document.getElementById('prox-icon');
+    if (proxIcon) proxIcon.textContent = d.dist<30?'🤗':d.dist<80?'🚶':'🚪';
+  }
+}
+
+function renderPIR(activo, dist) {
+  const el = document.getElementById('v-pir');
+  const ba = document.getElementById('b-pir');
+  const an = document.getElementById('a-pir');
+  const st = document.getElementById('s-pir');
+  if (!el) return;
+  if (activo) {
+    el.textContent = '● MOVIMIENTO';
+    el.style.color = 'var(--terra)';
+    ba.style.width = '100%';
+    an.textContent = oracleAnnotMotion(true);
+    st.textContent = dist > 0 ? `${Math.round(dist)} cm detectado` : 'Presencia confirmada';
+  } else {
+    el.textContent = '○ Sin mov.';
+    el.style.color = 'var(--ink4)';
+    ba.style.width = '0%';
+    an.textContent = oracleAnnotMotion(false);
+    st.textContent = 'HC-SR04 · Distancia';
+  }
+}
+
+function decideState(d) {
+  if (S.speaking || S.state==='watered') return;
+  let ns='idle';
+  if(d.temp>CFG.umbralTempAlta) ns='hot';
+  else if(d.temp<CFG.umbralTempBaja) ns='cold';
+  else if(d.soil<CFG.umbralSueloBajo) ns='thirsty';
+  if(ns!==S.state) {
+    applyState(ns);
+    if(S.voiceEnabled && (ns==='hot'||ns==='cold'||ns==='thirsty')) setTimeout(()=>speak(),700);
+  }
+}
+
+// ══════════ RIEGO — publica comando MQTT real ══════════
+function triggerWater(seg=2) {
+  const safeSeg = Math.min(2, Math.max(1, Number(seg) || 1));
+  S.riegos++;
+  document.getElementById('stat-riegos').textContent=S.riegos;
+  applyState('watered');
+  speak(rand(STATE_SAY.watered),true);
+
+  // Publicar en MQTT → ESP8266 activa la bomba
+  pubMQTT('jardin/comandos/riego', { segundos: safeSeg, motivo: 'manual_dashboard' });
+  mqttLog('jardin/comandos/riego',`{"segundos":${safeSeg}}`,'cmd');
+
+  // Timeout de seguridad: si no llega confirmación del ESP8266 en seg+5s, volver a idle
+  if(S.waterTimer) clearTimeout(S.waterTimer);
+  S.waterTimer = setTimeout(()=>{
+    S.waterTimer=null;
+    applyState('idle');
+  }, (safeSeg+5)*1000);
+}
+
+// ══════════ SPARKLINE ══════════
+function drawSpark() {
+  const c=document.getElementById('spark'); const W=c.offsetWidth||800; const H=38;
+  c.width=W; c.height=H; const ctx=c.getContext('2d'); ctx.clearRect(0,0,W,H);
+  const draw=(arr,color,dashed=false)=>{
+    if(arr.length<2)return;
+    const mn=Math.min(...arr)-1,mx=Math.max(...arr)+1,r=mx-mn||1;
+    ctx.beginPath(); ctx.strokeStyle=color; ctx.lineWidth=1.5;
+    if(dashed) ctx.setLineDash([4,3]); else ctx.setLineDash([]);
+    arr.forEach((v,i)=>{ const x=(i/(arr.length-1))*W,y=H-((v-mn)/r)*(H-8)-4; i===0?ctx.moveTo(x,y):ctx.lineTo(x,y); });
+    ctx.stroke();
+  };
+  draw(S.historial.slice(-40).map(h=>h.temp),'#8b4020');
+  draw(S.historial.slice(-40).map(h=>h.soil),'#2a3f6f',true);
+  ctx.setLineDash([]);
+  ctx.fillStyle='#8b4020'; ctx.font='11px Courier Prime'; ctx.fillText('── temp',4,H-3);
+  ctx.fillStyle='#2a3f6f'; ctx.fillText('- - suelo',74,H-3);
+}
+
+// ══════════ PIR / PROXIMIDAD ══════════
+function onPersonNear(dist) {
+  const now = Date.now();
+  if (now - S.lastVisitTime < VISIT_CD) return;
+  S.lastVisitTime = now;
+
+  S.visitCount++;
+  document.getElementById('stat-visits').textContent = S.visitCount;
+
+  const p = period();
+  let text = 'Visita registrada.';
+  let shouldSpeak = false;
+  let shouldGreetAnim = false;
+
+  if (now - S.lastGreetTime >= GREET_CD) {
+    text = rand(GREETS[p]);
+    shouldSpeak = true;
+    shouldGreetAnim = true;
+    S.lastGreetTime = now;
+  } else if (
+    (S.state === 'hot' || S.state === 'cold' || S.state === 'thirsty') &&
+    (now - S.lastStateMsgTime >= STATE_MSG_CD)
+  ) {
+    text = rand(STATE_SAY[S.state]);
+    shouldSpeak = true;
+    S.lastStateMsgTime = now;
+  }
+
+  addVisitLog(dist,p,text);
+
+  if (shouldGreetAnim) {
+    applyState('greeting');
+  }
+
+  if (shouldSpeak) {
+    setTimeout(() => speak(text,true), shouldGreetAnim ? 600 : 250);
+  }
+
+  if (dist < S.minDist) {
+    S.minDist = dist;
+    document.getElementById('stat-mindist').textContent = Math.round(dist);
+  }
+}
+
+function addVisitLog(dist, p, text) {
+  const icons={mañana:'🌅',tarde:'☀️',noche:'🌙'};
+  const ts=new Date().toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  const idx=S.visitCount;
+
+  ['visit-log','visit-log-twin'].forEach((id,i)=>{
+    const log=document.getElementById(id);
+    if(!log) return;
+    const ph=log.querySelector('div[style]'); if(ph) ph.remove();
+    const el=document.createElement('div'); el.className='visit-entry';
+    el.innerHTML=`<span class="ve-num">[${idx}]</span><span class="ve-time">${ts}</span><span class="ve-dist">${Math.round(dist)}cm</span><span class="ve-period">${icons[p]}</span><span class="ve-text">${text}</span>`;
+    log.insertBefore(el,log.firstChild);
+    while(log.children.length>(i===0?10:6)) log.removeChild(log.lastChild);
+  });
+}
+
+// ══════════ MQTT LOG UI ══════════
+function mqttLog(topic,payload,type='pub') {
+  const log=document.getElementById('mqtt-log');
+  const el=document.createElement('div'); el.className='le '+type;
+  const tags={pub:'tpub PUB',sub:'tsub SUB',alert:'talrt ALRT',cmd:'tcmd CMD',prox:'tprox PRX'};
+  const [cls,txt]=(tags[type]||'tsub SUB').split(' ');
+  const ts=new Date().toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  el.innerHTML=`<span class="ltag ${cls}">${txt}</span><span class="ltime">${ts}</span><span class="ltopic">${topic}</span><span class="lpay">${typeof payload==='string'?payload:JSON.stringify(payload)}</span>`;
+  log.appendChild(el); log.scrollTop=log.scrollHeight;
+  while(log.children.length>80) log.removeChild(log.firstChild);
+}
+
+// ══════════ CHAT CON CLAUDE ══════════
+function buildSystem() {
+  const last=S.historial.slice(-1)[0]||{};
+  const h=S.historial.slice(-10);
+  const tMax=h.length?Math.max(...h.map(x=>x.temp)).toFixed(1):'—';
+  const tMin=h.length?Math.min(...h.map(x=>x.temp)).toFixed(1):'—';
+
+  return `Sos el Oráculo de la Biblioteca Botánica Infinita. Tu estilo es el de Jorge Luis Borges: preciso, literario, ligeramente laberíntico, con referencias sutiles a arquitectura y geometría. Respondés en español, de manera concisa pero con voz propia.
+
+DATOS SENSORIALES EN TIEMPO REAL (ESP8266 via MQTT):
+- Temperatura: ${last.temp??'—'}°C
+- Humedad aire: ${last.hum??'—'}%
+- Humedad suelo: ${last.soil??'—'}% (0=seco, 100=saturado)
+- Movimiento HC-SR04: ${last.dist>0 && last.dist<NEAR_CM?'DETECTADO':'Sin movimiento'}
+- Distancia HC-SR04: ${last.dist>0?`${Math.round(last.dist)} cm`:'N/D'}
+- Estado del gemelo: ${S.state}
+- Conexión MQTT: ${S.mqttConnected?'activa':'sin conexión'}
+
+RESUMEN HISTÓRICO (${h.length} lecturas):
+- Temperatura: máx ${tMax}°C, mín ${tMin}°C
+- Riegos en esta sesión: ${S.riegos}
+- Visitas detectadas por HC-SR04: ${S.visitCount}${S.minDist<999?`, distancia mínima: ${S.minDist}cm`:''}
+
+UMBRALES CONFIGURADOS:
+- Temp alta: ${CFG.umbralTempAlta}°C | Temp baja: ${CFG.umbralTempBaja}°C
+- Riego si suelo <${CFG.umbralSueloBajo}%. No regar si suelo >80%.
+
+Si decidís regar, terminá tu respuesta con REGAR:N (N = segundos, 1-3).
+Respondé siempre en español. Sé conciso. Usá los datos reales.`;
+}
+
+function appendMsg(role,text,withRiego=false,seg=0) {
+  const c=document.getElementById('chat-messages');
+  const d=document.createElement('div');
+  d.className=`chat-msg ${role}`; d.setAttribute('data-idx',msgIndex++);
+  const roleLabel=role==='user'?'Jardinero':'Oráculo';
+  const chip=withRiego?`<span class="tool-note">⚙ regar_planta(segundos=${seg}) → MQTT publicado</span>`:'';
+  d.innerHTML=`<div class="msg-role ${role}">${roleLabel}</div><div class="msg-body">${chip}${text.replace(/\n/g,'<br>')}</div>`;
+  c.appendChild(d); c.scrollTop=c.scrollHeight;
+}
+
+let typCount=0;
+function appendTyping() {
+  const id='tp'+(++typCount);
+  const c=document.getElementById('chat-messages');
+  const d=document.createElement('div'); d.className='chat-msg agent'; d.id=id; d.setAttribute('data-idx','…');
+  d.innerHTML='<div class="msg-role agent">Oráculo</div><div class="msg-body"><div class="typing-dots"><span></span><span></span><span></span></div></div>';
+  c.appendChild(d); c.scrollTop=c.scrollHeight; return id;
+}
+function removeEl(id){ const e=document.getElementById(id); if(e) e.remove(); }
+
+async function sendChat() {
+  const inp=document.getElementById('chat-input');
+  const txt=inp.value.trim(); if(!txt) return;
+  inp.value='';
+  appendMsg('user',txt);
+  chatHistory.push({role:'user',content:txt});
+  const btn=document.getElementById('btn-send'); btn.disabled=true;
+  const tid=appendTyping();
+
+  try {
+    const res=await fetch('/api/openrouter',{
+      method:'POST',
+      headers:{
+        'Content-Type':'application/json'
+      },
+      body:JSON.stringify({
+        model: CFG.claudeModel || 'anthropic/claude-haiku-4.5',
+        max_tokens:1000,
+        system:buildSystem(),
+        messages:chatHistory
+      })
+    });
+    const data=await res.json();
+
+    if (data.error || data?.choices?.[0]?.error) {
+      removeEl(tid);
+      appendMsg('agent',`Error de API: ${data?.error?.message || data?.choices?.[0]?.error?.message || 'Error OpenRouter'}`);
+      btn.disabled=false;
+      return;
+    }
+
+    const reply=data?.choices?.[0]?.message?.content||'El oráculo guarda silencio.';
+    removeEl(tid);
+    const m=reply.match(/REGAR:(\d+)/);
+    if(m) {
+      const seg = Math.min(2, Math.max(1, parseInt(m[1],10) || 1));
+      appendMsg('agent',reply.replace(/REGAR:\d+/,'').trim(),true,seg);
+      chatHistory.push({role:'assistant',content:reply});
+      setTimeout(()=>triggerWater(seg),800);
+    } else {
+      appendMsg('agent',reply);
+      chatHistory.push({role:'assistant',content:reply});
+    }
+    mqttLog('jardin/oraculo',txt.substring(0,40)+'...','sub');
+  } catch(e) {
+    removeEl(tid);
+    appendMsg('agent',`Error de red: ${e.message}. Verificá conexión y CORS.`);
+  }
+  btn.disabled=false;
+}
+
+function sendQuick(txt){ document.getElementById('chat-input').value=txt; sendChat(); }
+
+function toggleAccord(id) {
+  const root = document.getElementById(id);
+  if (!root) return;
+  root.classList.toggle('open');
+}
+
+function simProx(value) {
+  const dist = Number(value);
+  const sv = document.getElementById('prox-sv');
+  const slider = document.getElementById('prox-slider');
+  if (sv) sv.textContent = `${dist} cm`;
+  if (slider && Number(slider.value) !== dist) slider.value = String(dist);
+
+  const payload = { distancia_cm: dist, cerca: dist < NEAR_CM, source: 'simulador_ui' };
+  const r = {
+    temp: S.temp,
+    hum: S.hum,
+    soil: S.soil,
+    dist,
+    ts: new Date().toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit',second:'2-digit'})
+  };
+
+  renderSensors(r);
+  renderPIR(payload.cerca, dist);
+  if (payload.cerca) onPersonNear(dist);
+  mqttLog('jardin/proximidad', payload, 'prox');
+}
+
+function simProxInstant(dist) {
+  simProx(Number(dist));
+}
+
+// ══════════ INIT ══════════
+setTimeout(()=>speechSynthesis.getVoices(),400);
+applyState('idle');
+
+// Conectar MQTT
+initMQTT();
+
+// Mensaje inicial en chat
+appendMsg('agent','El archivo botánico está activo. Aguardando datos del ESP8266 via MQTT. Podés consultarme sobre el estado de la planta o pedirme que la riegue.');
+
+// Saludo inicial
+setTimeout(()=>{ showBubble(rand(GREETS[period()])); setTimeout(hideBubble,4000); },1600);
+
+// Clock en footer
+setInterval(()=>{ document.getElementById('footer-time').textContent=new Date().toLocaleTimeString('es-AR'); },1000);
+
+</script>
+</body>
+</html>

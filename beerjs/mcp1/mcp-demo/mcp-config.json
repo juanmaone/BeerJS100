@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "beerjs-weather-server": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "tsx",
+        "C:\\proyectos\\iot\\beerjs\\mcp1\\mcp-demo\\weather-service.ts"
+      ],
+      "env": {
+        "MQTT_URL": "mqtt://localhost:1883",
+        "MQTT_TOPIC": "#"
+      }
+    }
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "name": "botanical-twin-demo",
+  "version": "1.0.0",
+  "description": "Demo Jardinero IA: dashboard web + firmware ESP8266 + MCP",
+  "type": "module",
+  "main": "botanical_twin_server.js",
+  "scripts": {
+    "start": "node botanical_twin_server.js",
+    "dashboard": "node scripts/start-dashboard.js",
+    "gardener": "node scripts/start-dashboard.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.20.0",
+    "dotenv": "^16.6.1",
+    "mqtt": "^5.14.1"
+  },
+  "devDependencies": {
+    "http-server": "^14.1.1"
+  }
+}

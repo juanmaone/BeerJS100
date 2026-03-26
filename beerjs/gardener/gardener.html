@@ -1,0 +1,737 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Labyrinthine Botanical Twin</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400;1,600&family=IM+Fell+English:ital@0;1&family=Courier+Prime:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<!-- Cargar config ANTES que el resto. Editar config.js con API key y URL del broker -->
+<script src="config.js"></script>
+<!-- MQTT.js para conexión WebSocket al broker Mosquitto -->
+<script src="https://cdn.jsdelivr.net/npm/mqtt@5.10.1/dist/mqtt.min.js"></script>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --parch:    #e8e0cc;
+  --parch2:   #ddd4bc;
+  --parch3:   #d0c8b0;
+  --parch4:   #c8bea4;
+  --ink:      #1c1710;
+  --ink2:     #2e2820;
+  --ink3:     #483e30;
+  --ink4:     #6a5e4c;
+  --blue:     #2a3f6f;
+  --blue2:    #3d5a8a;
+  --blue3:    #6080b0;
+  --blue4:    #a0b8d8;
+  --terra:    #8b4020;
+  --terra2:   #b86030;
+  --terra3:   #d48050;
+  --terra4:   #e0a880;
+  --gold:     #8a6a20;
+  --gold2:    #b89040;
+  --serif:    'Playfair Display', Georgia, serif;
+  --fell:     'IM Fell English', Georgia, serif;
+  --mono:     'Courier Prime', 'Courier New', monospace;
+}
+
+body {
+  background: var(--parch);
+  color: var(--ink);
+  font-family: var(--serif);
+  min-height: 100vh;
+  position: relative;
+  overflow-x: hidden;
+}
+
+/* ── Textura y grilla de plano ── */
+body::before {
+  content: '';
+  position: fixed; inset: 0; pointer-events: none; z-index: 0;
+  background-image:
+    linear-gradient(rgba(42,63,111,0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(42,63,111,0.06) 1px, transparent 1px),
+    linear-gradient(rgba(42,63,111,0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(42,63,111,0.03) 1px, transparent 1px);
+  background-size: 80px 80px, 80px 80px, 20px 20px, 20px 20px;
+}
+body::after {
+  content: '';
+  position: fixed; inset: 0; pointer-events: none; z-index: 0;
+  background: radial-gradient(ellipse at 0% 0%, rgba(139,64,32,0.04) 0%, transparent 50%),
+              radial-gradient(ellipse at 100% 100%, rgba(42,63,111,0.06) 0%, transparent 50%);
+}
+
+.app { position: relative; z-index: 1; max-width: 1200px; margin: 0 auto; padding: 0 20px 40px; }
+
+/* ── Marca de corte blueprint (esquinas) ── */
+.corner-mark {
+  position: fixed; width: 20px; height: 20px;
+  border-color: var(--blue); border-style: solid; opacity: 0.3;
+}
+.corner-mark.tl { top: 12px; left: 12px; border-width: 1px 0 0 1px; }
+.corner-mark.tr { top: 12px; right: 12px; border-width: 1px 1px 0 0; }
+.corner-mark.bl { bottom: 12px; left: 12px; border-width: 0 0 1px 1px; }
+.corner-mark.br { bottom: 12px; right: 12px; border-width: 0 1px 1px 0; }
+
+/* ── Header ── */
+header {
+  padding: 28px 0 0;
+  border-bottom: 2px solid var(--ink);
+  margin-bottom: 0;
+  display: flex; flex-direction: column;
+}
+.header-top {
+  display: flex; align-items: flex-start; gap: 16px; margin-bottom: 8px;
+}
+.header-emblem {
+  width: 52px; height: 52px; flex-shrink: 0;
+  border: 1.5px solid var(--blue); display: flex; align-items: center; justify-content: center;
+  background: var(--parch2); position: relative;
+}
+.header-emblem::before {
+  content: ''; position: absolute; inset: 3px;
+  border: 0.5px solid var(--blue3);
+  border-radius: 50%;
+}
+.header-emblem svg { width: 28px; height: 28px; }
+.header-titles { flex: 1; }
+header h1 {
+  font-family: var(--serif); font-size: 36px; font-weight: 700;
+  letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink);
+  line-height: 1;
+}
+header h1 em { font-style: normal; color: var(--terra); }
+.header-sub {
+  font-family: var(--mono); font-size: 13px; color: var(--ink4);
+  letter-spacing: 0.18em; text-transform: uppercase;
+  margin-top: 4px;
+}
+.header-rule {
+  height: 1px; background: var(--ink3); margin: 8px 0 0;
+  display: flex; align-items: center; gap: 0;
+}
+.header-badges {
+  display: flex; gap: 0; border: 1px solid var(--ink3);
+  overflow: hidden; margin-left: auto; margin-bottom: 2px; flex-shrink: 0;
+}
+.hbadge {
+  padding: 3px 10px;
+  font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em;
+  text-transform: uppercase; border-right: 1px solid var(--ink3);
+  display: flex; align-items: center; gap: 5px;
+  color: var(--ink3);
+}
+.hbadge:last-child { border-right: none; }
+.hbadge.active { background: var(--blue); color: var(--parch); }
+.hbadge.terra  { background: var(--terra); color: var(--parch); }
+.live-dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; animation: blink-dot 2s ease-in-out infinite; }
+@keyframes blink-dot { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+/* ── Section Accord ── */
+.accord { margin-top: 0; border-bottom: 1px solid var(--ink3); }
+.accord-header {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 0; cursor: pointer;
+  user-select: none;
+  border-top: 1px solid var(--parch3);
+  transition: background 0.15s;
+}
+.accord-header:hover { background: rgba(42,63,111,0.03); }
+.accord-num {
+  font-family: var(--mono); font-size: 13px; color: var(--blue3);
+  min-width: 28px; letter-spacing: 0.05em;
+}
+.accord-title {
+  font-family: var(--mono); font-size: 14px; font-weight: 700;
+  letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink2);
+  flex: 1;
+}
+.accord-subtitle { font-family: var(--mono); font-size: 11px; color: var(--ink4); letter-spacing: 0.08em; }
+.accord-toggle {
+  font-family: var(--mono); font-size: 18px; color: var(--blue3);
+  transition: transform 0.25s; line-height: 1;
+}
+.accord.open .accord-toggle { transform: rotate(45deg); }
+.accord-body { display: none; padding: 4px 0 16px 28px; }
+.accord.open .accord-body { display: block; }
+
+/* ── Sensor data grid ── */
+.sensor-top { border-top: 1px solid var(--parch3); padding: 12px 0 0; }
+.sensor-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; }
+.sensor-cell {
+  padding: 10px 14px; border-right: 1px solid var(--parch3);
+  position: relative;
+}
+.sensor-cell:last-child { border-right: none; }
+.sensor-cell::before {
+  content: attr(data-coord);
+  position: absolute; top: 4px; right: 6px;
+  font-family: var(--mono); font-size: 10px; color: var(--blue4); opacity: 0.6;
+}
+.sc-label {
+  font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em;
+  text-transform: uppercase; color: var(--ink4); margin-bottom: 4px;
+}
+.sc-val {
+  font-family: var(--mono); font-size: 33px; font-weight: 700;
+  line-height: 1; color: var(--ink);
+}
+.sc-val .unit { font-size: 15px; font-weight: 400; }
+.sc-annot {
+  font-family: var(--fell); font-style: italic; font-size: 13px;
+  color: var(--terra2); margin-top: 3px;
+}
+.sc-bar { height: 2px; background: var(--parch3); margin-top: 6px; overflow: hidden; }
+.sc-fill { height: 100%; transition: width 1.2s ease; }
+.sc-status { font-family: var(--mono); font-size: 11px; color: var(--ink4); margin-top: 3px; }
+
+.spark-row { border-top: 1px solid var(--parch3); padding: 8px 14px; }
+canvas { display: block; }
+
+/* ── Avatar / Gemelo ── */
+.twin-layout { display: grid; grid-template-columns: 220px 1fr; gap: 24px; align-items: start; }
+.avatar-zone { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.blueprint-frame {
+  position: relative; width: 200px; height: 240px;
+  border: 1px solid var(--blue3);
+  background: var(--parch2);
+  display: flex; align-items: center; justify-content: center;
+}
+.blueprint-frame::before {
+  content: ''; position: absolute;
+  top: 4px; left: 4px; right: 4px; bottom: 4px;
+  border: 0.5px solid rgba(42,63,111,0.2);
+}
+/* Cruces en esquinas blueprinta */
+.blueprint-frame::after {
+  content: attr(data-label);
+  position: absolute; bottom: -1px; left: 6px;
+  font-family: var(--mono); font-size: 10px; color: var(--blue3);
+  background: var(--parch2); padding: 0 4px;
+  letter-spacing: 0.1em;
+}
+#plant-svg { width: 160px; height: 200px; overflow: visible; }
+
+.state-stamp {
+  font-family: var(--mono); font-size: 13px; font-weight: 700;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  border: 1.5px solid currentColor; padding: 3px 10px;
+  text-align: center; width: 100%;
+  transition: all 0.4s;
+}
+.stamp-ok     { color: var(--blue); }
+.stamp-hot    { color: var(--terra); }
+.stamp-cold   { color: var(--blue2); }
+.stamp-thirst { color: var(--gold); }
+.stamp-water  { color: var(--terra2); }
+.stamp-greet  { color: var(--blue2); }
+
+/* Burbuja diálogo estilo Borges */
+.speech-box {
+  border: 1px solid var(--ink3); background: var(--parch);
+  padding: 10px 12px; font-family: var(--fell); font-style: italic;
+  font-size: 15px; line-height: 1.6; color: var(--ink2);
+  position: relative; min-height: 54px;
+  display: none;
+}
+.speech-box.visible { display: block; }
+.speech-box::before {
+  content: '"'; position: absolute; top: -8px; left: 8px;
+  font-size: 31px; color: var(--terra); line-height: 1;
+  font-family: var(--serif); background: var(--parch); padding: 0 2px;
+}
+.speech-box::after {
+  content: '"'; position: absolute; bottom: -12px; right: 8px;
+  font-size: 31px; color: var(--terra); line-height: 1;
+  font-family: var(--serif); background: var(--parch); padding: 0 2px;
+}
+
+.avatar-btns { display: flex; flex-direction: column; gap: 5px; width: 100%; }
+.btn-arch {
+  font-family: var(--mono); font-size: 11px; font-weight: 700;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  border: 1px solid var(--ink4); padding: 6px 10px; cursor: pointer;
+  background: transparent; color: var(--ink3); width: 100%;
+  transition: all 0.15s; text-align: left;
+  display: flex; align-items: center; gap: 6px;
+}
+.btn-arch:hover { background: var(--ink); color: var(--parch); border-color: var(--ink); }
+.btn-arch.terra { border-color: var(--terra); color: var(--terra); }
+.btn-arch.terra:hover { background: var(--terra); color: var(--parch); }
+.btn-arch.blue  { border-color: var(--blue); color: var(--blue); }
+.btn-arch.blue:hover  { background: var(--blue); color: var(--parch); }
+
+/* Columna derecha del gemelo */
+.twin-right { display: flex; flex-direction: column; gap: 12px; }
+.twin-data-row {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+}
+
+/* Estilo campo de datos tipo ficha */
+.data-card {
+  border: 1px solid var(--parch3); padding: 10px 12px;
+  background: var(--parch2);
+}
+.data-card-title {
+  font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em;
+  text-transform: uppercase; color: var(--ink4); border-bottom: 1px solid var(--parch3);
+  padding-bottom: 5px; margin-bottom: 8px;
+}
+.data-card-body { font-family: var(--mono); font-size: 14px; color: var(--ink2); line-height: 1.7; }
+
+/* Stats visitas */
+.visit-stats { display: flex; gap: 0; border: 1px solid var(--parch3); }
+.vstat { flex: 1; padding: 8px 10px; border-right: 1px solid var(--parch3); text-align: center; }
+.vstat:last-child { border-right: none; }
+.vstat-val { font-family: var(--mono); font-size: 28px; font-weight: 700; color: var(--terra); }
+.vstat-label { font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink4); }
+
+/* ── Proximidad ── */
+.prox-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.prox-meter {
+  border: 1px solid var(--blue3); padding: 12px; background: var(--parch2);
+  display: flex; flex-direction: column; gap: 8px;
+}
+.prox-val-big { font-family: var(--mono); font-size: 54px; font-weight: 700; color: var(--blue); line-height: 1; transition: color 0.4s; }
+.prox-unit-small { font-family: var(--mono); font-size: 15px; color: var(--ink4); }
+.prox-radial { position: relative; height: 8px; background: var(--parch3); overflow: hidden; }
+.prox-radial-fill { height: 100%; transition: width 0.8s ease, background 0.4s; }
+.prox-note { font-family: var(--fell); font-style: italic; font-size: 14px; color: var(--terra2); }
+
+.prox-sim { display: flex; flex-direction: column; gap: 8px; }
+.sim-label { font-family: var(--mono); font-size: 11px; letter-spacing: 0.12em; color: var(--ink4); text-transform: uppercase; }
+.sim-slider-row { display: flex; align-items: center; gap: 8px; }
+input[type=range] { flex: 1; accent-color: var(--blue); }
+.sim-val { font-family: var(--mono); font-size: 14px; color: var(--blue); min-width: 36px; text-align: right; }
+.sim-btns { display: flex; gap: 6px; }
+.sim-btns .btn-arch { flex: 1; text-align: center; justify-content: center; font-size: 11px; }
+
+/* Visit log estilo biblioteca */
+.visit-log { display: flex; flex-direction: column; gap: 0; }
+.visit-entry {
+  display: flex; gap: 10px; padding: 6px 0;
+  border-bottom: 1px solid var(--parch3);
+  animation: fadeIn 0.3s ease;
+}
+@keyframes fadeIn { from{opacity:0;transform:translateY(-3px)} to{opacity:1} }
+.ve-num { font-family: var(--mono); font-size: 13px; color: var(--blue3); min-width: 28px; }
+.ve-time { font-family: var(--mono); font-size: 13px; color: var(--ink4); min-width: 55px; }
+.ve-dist { font-family: var(--mono); font-size: 13px; color: var(--terra); min-width: 40px; }
+.ve-period { font-size: 14px; min-width: 18px; }
+.ve-text { font-family: var(--fell); font-style: italic; font-size: 14px; color: var(--ink2); flex: 1; line-height: 1.4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ── Chat estilo catálogo Borges ── */
+.chat-layout { display: flex; flex-direction: column; gap: 0; }
+.chat-messages {
+  min-height: 200px; max-height: 320px; overflow-y: auto;
+  border: 1px solid var(--parch3); padding: 0;
+}
+.chat-messages::-webkit-scrollbar { width: 4px; }
+.chat-messages::-webkit-scrollbar-thumb { background: var(--parch3); }
+
+.chat-msg {
+  display: flex; gap: 12px; padding: 10px 14px;
+  border-bottom: 1px solid var(--parch3);
+  animation: fadeIn 0.3s ease;
+  position: relative;
+}
+.chat-msg.user { background: var(--parch2); }
+.chat-msg.agent { background: var(--parch); }
+.chat-msg::before {
+  content: attr(data-idx);
+  position: absolute; left: 0; top: 0;
+  font-family: var(--mono); font-size: 11px; color: var(--blue4);
+  padding: 3px 5px; line-height: 1;
+}
+.msg-role {
+  font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em;
+  text-transform: uppercase; min-width: 60px; padding-top: 2px;
+  flex-shrink: 0;
+}
+.msg-role.user  { color: var(--terra); }
+.msg-role.agent { color: var(--blue); }
+.msg-body {
+  font-family: var(--fell); font-size: 15px; line-height: 1.7;
+  color: var(--ink2); flex: 1;
+}
+.typing-dots { display: flex; gap: 4px; align-items: center; padding: 4px 0; }
+.typing-dots span { width: 4px; height: 4px; border-radius: 50%; background: var(--blue3); animation: tdot 1.2s ease-in-out infinite; }
+.typing-dots span:nth-child(2){ animation-delay:.2s; }
+.typing-dots span:nth-child(3){ animation-delay:.4s; }
+@keyframes tdot { 0%,80%,100%{transform:translateY(0)} 40%{transform:translateY(-5px)} }
+
+.tool-note {
+  font-family: var(--mono); font-size: 11px; letter-spacing: 0.06em;
+  color: var(--terra3); margin-bottom: 4px; display: block;
+}
+
+.chat-input-area {
+  border: 1px solid var(--parch3); border-top: none;
+  display: flex; align-items: stretch;
+}
+.chat-input {
+  flex: 1; padding: 10px 14px;
+  font-family: var(--fell); font-style: italic; font-size: 16px;
+  color: var(--ink); background: transparent; border: none; outline: none;
+  line-height: 1.5;
+}
+.chat-input::placeholder { color: var(--ink4); }
+.chat-send {
+  font-family: var(--mono); font-size: 11px; font-weight: 700;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  background: var(--blue); color: var(--parch);
+  border: none; padding: 0 16px; cursor: pointer; transition: background 0.15s;
+  border-left: 1px solid var(--blue2);
+}
+.chat-send:hover { background: var(--ink); }
+.chat-send:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.quick-queries {
+  display: flex; gap: 6px; flex-wrap: wrap; padding: 8px 0;
+  border-top: 1px solid var(--parch3); margin-top: 4px;
+}
+.qq {
+  font-family: var(--mono); font-size: 11px; letter-spacing: 0.06em;
+  border: 1px solid var(--parch3); padding: 3px 8px; cursor: pointer;
+  color: var(--ink4); background: transparent; transition: all 0.15s;
+}
+.qq:hover { border-color: var(--terra); color: var(--terra); background: rgba(139,64,32,0.04); }
+
+/* ── MQTT Log ── */
+.mqtt-log { max-height: 180px; overflow-y: auto; font-family: var(--mono); font-size: 13px; display: flex; flex-direction: column; gap: 2px; }
+.mqtt-log::-webkit-scrollbar { width: 3px; }
+.mqtt-log::-webkit-scrollbar-thumb { background: var(--parch3); }
+.le { display: flex; gap: 8px; padding: 2px 4px; border-bottom: 0.5px solid var(--parch3); }
+.ltag { font-size: 10px; padding: 1px 4px; min-width: 26px; text-align: center; border: 1px solid currentColor; }
+.tpub  { color: var(--blue2); }
+.tsub  { color: var(--ink4); }
+.talrt { color: var(--terra); }
+.tcmd  { color: var(--gold); }
+.tprox { color: var(--blue3); }
+.ltime   { color: var(--ink4); min-width: 60px; }
+.ltopic  { color: var(--ink3); min-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lpay    { color: var(--ink); opacity: 0.7; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+
+/* Footer */
+footer {
+  margin-top: 24px; padding: 10px 0; border-top: 2px solid var(--ink);
+  display: flex; justify-content: space-between; align-items: center;
+}
+.footer-l { font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em; color: var(--ink4); text-transform: uppercase; }
+.footer-r { font-family: var(--fell); font-style: italic; font-size: 14px; color: var(--ink4); }
+
+/* Coord margin notes */
+.margin-note {
+  font-family: var(--mono); font-size: 10px; color: var(--blue4);
+  letter-spacing: 0.08em; margin-bottom: 4px;
+}
+
+@media(max-width:700px) {
+  .sensor-grid { grid-template-columns: 1fr 1fr; }
+  .twin-layout, .prox-layout, .twin-data-row { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+<div class="corner-mark tl"></div>
+<div class="corner-mark tr"></div>
+<div class="corner-mark bl"></div>
+<div class="corner-mark br"></div>
+
+<div class="app">
+
+<!-- HEADER -->
+<header>
+  <div class="header-top">
+    <div class="header-emblem">
+      <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="20" cy="20" r="16" stroke="#2a3f6f" stroke-width="0.8"/>
+        <circle cx="20" cy="20" r="10" stroke="#2a3f6f" stroke-width="0.5"/>
+        <circle cx="20" cy="20" r="5" stroke="#8b4020" stroke-width="0.8"/>
+        <line x1="20" y1="4" x2="20" y2="36" stroke="#2a3f6f" stroke-width="0.5" opacity="0.4"/>
+        <line x1="4" y1="20" x2="36" y2="20" stroke="#2a3f6f" stroke-width="0.5" opacity="0.4"/>
+        <path d="M20 14 Q16 18 20 24 Q24 18 20 14Z" fill="#2a3f6f" opacity="0.6"/>
+      </svg>
+    </div>
+    <div class="header-titles">
+      <h1>The <em>Labyrinthine</em> Botanical Twin</h1>
+      <div class="header-sub">Modulor × Borges &nbsp;·&nbsp; Plataforma de Gemelo Digital &nbsp;·&nbsp; Vers une Architecture Botanique</div>
+    </div>
+    <div class="header-badges">
+      <div class="hbadge active"><div class="live-dot"></div> Sensores</div>
+      <div class="hbadge active"><div class="live-dot"></div> Gemelo</div>
+      <div class="hbadge terra"><div class="live-dot"></div> Voz</div>
+      <div class="hbadge" id="hbadge-mqtt" style="color:var(--gold2)"><div class="live-dot"></div> MQTT · Conectando…</div>
+    </div>
+  </div>
+</header>
+
+<!-- ══════════ I. ARCHIVO DE SENSORES ══════════ -->
+<div class="accord open" id="ac-sensors">
+  <div class="accord-header" onclick="toggleAccord('ac-sensors')">
+    <span class="accord-num">[I]</span>
+    <span class="accord-title">Archivo de Sensores</span>
+    <span class="accord-subtitle">Telemetría en tiempo real · ESP32 · MQTT</span>
+    <span class="accord-toggle">+</span>
+  </div>
+  <div class="accord-body">
+    <div class="margin-note">PLANO REF. S-01 · MODULOR OPTIMAL RANGE ANALYSIS</div>
+    <div class="sensor-top">
+      <div class="sensor-grid">
+        <div class="sensor-cell" data-coord="S1·Δt">
+          <div class="sc-label">Temperatura</div>
+          <div class="sc-val" id="v-temp">--<span class="unit">°C</span></div>
+          <div class="sc-annot" id="a-temp">—</div>
+          <div class="sc-bar"><div class="sc-fill" id="b-temp" style="background:var(--terra2);width:0%"></div></div>
+          <div class="sc-status" id="s-temp">DHT22</div>
+        </div>
+        <div class="sensor-cell" data-coord="S2·φh">
+          <div class="sc-label">Humedad Aire</div>
+          <div class="sc-val" id="v-hum">--<span class="unit">%</span></div>
+          <div class="sc-annot" id="a-hum">—</div>
+          <div class="sc-bar"><div class="sc-fill" id="b-hum" style="background:var(--blue3);width:0%"></div></div>
+          <div class="sc-status">DHT22 · Higrostato</div>
+        </div>
+        <div class="sensor-cell" data-coord="S3·Πr">
+          <div class="sc-label">Movimiento</div>
+          <div class="sc-val" id="v-pir" style="font-size:22px; transition:color 0.4s">--</div>
+          <div class="sc-annot" id="a-pir">—</div>
+          <div class="sc-bar"><div class="sc-fill" id="b-pir" style="background:var(--terra2);width:0%"></div></div>
+          <div class="sc-status" id="s-pir">HC-SR04 · Distancia</div>
+        </div>
+        <div class="sensor-cell" data-coord="S4·σs">
+          <div class="sc-label">Humedad Suelo</div>
+          <div class="sc-val" id="v-soil">--<span class="unit">%</span></div>
+          <div class="sc-annot" id="a-soil">—</div>
+          <div class="sc-bar"><div class="sc-fill" id="b-soil" style="background:var(--blue2);width:0%"></div></div>
+          <div class="sc-status" id="s-soil">Capacitivo</div>
+        </div>
+      </div>
+      <div class="spark-row">
+        <canvas id="spark" height="38"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ II. GEMELO DIGITAL ══════════ -->
+<div class="accord open" id="ac-twin">
+  <div class="accord-header" onclick="toggleAccord('ac-twin')">
+    <span class="accord-num">[II]</span>
+    <span class="accord-title">Gemelo Digital — Avatar Expresivo</span>
+    <span class="accord-subtitle">Representación botánica · Estados reactivos · TTS</span>
+    <span class="accord-toggle">+</span>
+  </div>
+  <div class="accord-body">
+    <div class="margin-note">PLANO REF. T-02 · SUJETO BOTÁNICO — ESTUDIO DE ESTADOS</div>
+    <div class="twin-layout">
+
+      <!-- Avatar -->
+      <div class="avatar-zone">
+        <div class="blueprint-frame" data-label="GEMELO-01 · SUJETO BOTÁNICO">
+          <svg id="plant-svg" viewBox="0 0 160 200" xmlns="http://www.w3.org/2000/svg">
+            <g id="particles"></g>
+
+            <!-- Maceta estilo blueprinta -->
+            <path d="M48 162 L56 192 L104 192 L112 162 Z" fill="#8a6840" stroke="#6a4820" stroke-width="0.8"/>
+            <ellipse cx="80" cy="162" rx="34" ry="8" fill="#9a7848"/>
+            <ellipse cx="80" cy="161" rx="30" ry="6" fill="#3a2010"/>
+            <g id="cracks" opacity="0">
+              <line x1="68" y1="159" x2="74" y2="162" stroke="#5a3010" stroke-width="0.7"/>
+              <line x1="84" y1="160" x2="90" y2="162" stroke="#5a3010" stroke-width="0.7"/>
+            </g>
+
+            <g id="plant-body" style="transform-origin:80px 150px">
+              <!-- Tallo -->
+              <path d="M80 160 Q76 138 80 112" stroke="#3a6828" stroke-width="4.5" fill="none" stroke-linecap="round" id="stem"/>
+              <!-- Hoja izq -->
+              <g id="leaf-left" style="transform-origin:70px 138px">
+                <ellipse cx="58" cy="132" rx="22" ry="10" fill="#3aaa50" stroke="#2a8038" stroke-width="0.5" transform="rotate(-35,58,132)"/>
+              </g>
+              <!-- Hoja der -->
+              <g id="leaf-right" style="transform-origin:90px 126px">
+                <ellipse cx="104" cy="120" rx="22" ry="10" fill="#30a048" stroke="#208038" stroke-width="0.5" transform="rotate(30,104,120)"/>
+              </g>
+              <!-- Hoja top -->
+              <g id="leaf-top" style="transform-origin:80px 106px">
+                <ellipse cx="80" cy="100" rx="12" ry="7" fill="#50cc70" stroke="#30a050" stroke-width="0.5"/>
+              </g>
+
+              <!-- Cabeza -->
+              <circle cx="80" cy="90" r="30" fill="#28a040" id="body-circle"/>
+              <circle cx="66" cy="95" r="6" fill="#ff8888" opacity="0" id="cheek-l"/>
+              <circle cx="94" cy="95" r="6" fill="#ff8888" opacity="0" id="cheek-r"/>
+
+              <!-- Ojos -->
+              <circle cx="72" cy="85" r="7" fill="white" id="ew-l"/>
+              <circle cx="88" cy="85" r="7" fill="white" id="ew-r"/>
+              <circle cx="74" cy="85" r="3.5" fill="#1a2e1a" id="pupil-l"/>
+              <circle cx="90" cy="85" r="3.5" fill="#1a2e1a" id="pupil-r"/>
+              <circle cx="75.5" cy="83.5" r="1.2" fill="white"/>
+              <circle cx="91.5" cy="83.5" r="1.2" fill="white"/>
+              <!-- Párpados -->
+              <rect x="65" y="78" width="14" height="7" rx="1.5" fill="#28a040" id="lid-l" opacity="0"/>
+              <rect x="81" y="78" width="14" height="7" rx="1.5" fill="#28a040" id="lid-r" opacity="0"/>
+
+              <!-- Boca -->
+              <path d="M70 98 Q80 107 90 98" stroke="#1a3a1a" stroke-width="2" fill="none" stroke-linecap="round" id="mouth"/>
+
+              <!-- Gotas sudor -->
+              <g id="sweat-drops" opacity="0">
+                <ellipse cx="105" cy="74" rx="4" ry="5.5" fill="#60ccff" opacity="0.85"/>
+                <ellipse cx="111" cy="84" rx="3" ry="4.5" fill="#60ccff" opacity="0.7"/>
+                <ellipse cx="52" cy="78" rx="3.5" ry="5" fill="#60ccff" opacity="0.75"/>
+              </g>
+              <!-- Líneas frío -->
+              <g id="cold-lines" opacity="0">
+                <line x1="62" y1="68" x2="62" y2="63" stroke="#88bbdd" stroke-width="1.5" stroke-linecap="round"/>
+                <line x1="80" y1="64" x2="80" y2="59" stroke="#88bbdd" stroke-width="1.5" stroke-linecap="round"/>
+                <line x1="98" y1="68" x2="98" y2="63" stroke="#88bbdd" stroke-width="1.5" stroke-linecap="round"/>
+              </g>
+              <!-- Corazón -->
+              <text x="80" y="74" text-anchor="middle" font-size="13" id="heart" opacity="0">💚</text>
+            </g>
+          </svg>
+        </div>
+
+        <div class="state-stamp stamp-ok" id="state-stamp">● Óptimo</div>
+
+        <div class="speech-box" id="speech-box"></div>
+
+        <div class="avatar-btns" style="margin-top:6px">
+          <button class="btn-arch blue" onclick="speak()">▶ Hablar</button>
+          <button class="btn-arch" onclick="greet()">◈ Saludar</button>
+          <button class="btn-arch" onclick="reportStatus()">◉ Informe de estado</button>
+          <button class="btn-arch terra" onclick="triggerWater()">◆ Riego manual</button>
+          <button class="btn-arch" onclick="toggleVoice()" id="btn-voice">○ Silenciar voz</button>
+        </div>
+      </div>
+
+      <!-- Datos gemelo -->
+      <div class="twin-right">
+        <div class="twin-data-row">
+          <div class="data-card">
+            <div class="data-card-title">Estado Actual</div>
+            <div class="data-card-body" id="twin-status-text">Leyendo sensores...</div>
+          </div>
+          <div class="data-card">
+            <div class="data-card-title">Estadísticas de Visitas</div>
+            <div class="visit-stats">
+              <div class="vstat"><div class="vstat-val" id="stat-visits">0</div><div class="vstat-label">Visitas</div></div>
+              <div class="vstat"><div class="vstat-val" id="stat-mindist" style="font-size: 23px">—</div><div class="vstat-label">Min cm</div></div>
+              <div class="vstat"><div class="vstat-val" id="stat-riegos">0</div><div class="vstat-label">Riegos</div></div>
+            </div>
+          </div>
+        </div>
+        <div class="data-card">
+          <div class="data-card-title">Registro de Interacciones Recientes</div>
+          <div class="visit-log" id="visit-log-twin">
+            <div style="font-family:var(--fell);font-style:italic;font-size: 14px;color:var(--ink4);padding:8px 0">Aguardando la primera aproximación...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ III. SENSOR DE PROXIMIDAD ══════════ -->
+<div class="accord open" id="ac-prox">
+  <div class="accord-header" onclick="toggleAccord('ac-prox')">
+    <span class="accord-num">[III]</span>
+    <span class="accord-title">Sensor de Proximidad — HC-SR04</span>
+    <span class="accord-subtitle">Registro de visitas · Saludos contextuales · GPIO5/18</span>
+    <span class="accord-toggle">+</span>
+  </div>
+  <div class="accord-body">
+    <div class="margin-note">PLANO REF. P-03 · DETECCIÓN DE PRESENCIA HUMANA · UMBRAL: 60 CM</div>
+    <div class="prox-layout">
+      <div class="prox-meter">
+        <div style="display:flex;align-items:flex-end;gap:8px">
+          <div>
+            <div style="font-family:var(--mono);font-size: 11px;letter-spacing:0.1em;color:var(--ink4);margin-bottom:3px">DISTANCIA DETECTADA</div>
+            <div style="display:flex;align-items:baseline;gap:6px">
+              <div class="prox-val-big" id="prox-val">---</div>
+              <div class="prox-unit-small">cm</div>
+            </div>
+          </div>
+          <div style="font-size: 41px;margin-bottom:4px" id="prox-icon">🚶</div>
+        </div>
+        <div class="prox-radial"><div class="prox-radial-fill" id="prox-bar" style="width:0%;background:var(--blue3)"></div></div>
+        <div class="prox-note" id="prox-note">Sin movimiento detectado</div>
+        <div style="font-family:var(--mono);font-size: 10px;color:var(--blue4);margin-top:4px">TRIG·GPIO5 · ECHO·GPIO18 · TOPIC: jardin/proximidad</div>
+      </div>
+
+      <div class="prox-sim">
+        <div class="sim-label">Simulador HC-SR04</div>
+        <div class="sim-slider-row">
+          <span style="font-family:var(--mono);font-size: 11px;color:var(--ink4)">Dist.</span>
+          <input type="range" min="5" max="300" value="300" id="prox-slider" oninput="simProx(this.value)">
+          <span class="sim-val" id="prox-sv">300 cm</span>
+        </div>
+        <div class="sim-btns">
+          <button class="btn-arch blue sim-btns" onclick="simProxInstant(30)" style="flex:1;justify-content:center">↓ Acercarme (30cm)</button>
+          <button class="btn-arch sim-btns" onclick="simProxInstant(300)" style="flex:1;justify-content:center">↑ Alejarme</button>
+        </div>
+
+        <div class="data-card" style="margin-top:8px">
+          <div class="data-card-title">Registro de Visitas</div>
+          <div class="visit-log" id="visit-log" style="max-height:140px;overflow-y:auto">
+            <div style="font-family:var(--fell);font-style:italic;font-size: 14px;color:var(--ink4);padding:6px 0">El laberinto aguarda al caminante...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ IV. CATÁLOGO / ORÁCULO (CHAT) ══════════ -->
+<div class="accord open" id="ac-chat">
+  <div class="accord-header" onclick="toggleAccord('ac-chat')">
+    <span class="accord-num">[IV]</span>
+    <span class="accord-title">Catálogo & Oráculo — Consulta al Agente</span>
+    <span class="accord-subtitle">Biblioteca Botánica Infinita · Claude · Datos en tiempo real</span>
+    <span class="accord-toggle">+</span>
+  </div>
+  <div class="accord-body">
+    <div class="margin-note">PLANO REF. C-04 · DIÁLOGO CON LA INTELIGENCIA ARTIFICIAL · ARCHIVO ACTIVO</div>
+    <div class="quick-queries">
+      <button class="qq" onclick="sendQuick('¿Cómo se encuentra la planta en este momento?')">§ Estado actual</button>
+      <button class="qq" onclick="sendQuick('¿La planta tuvo calor o frío hoy? ¿Cuántas horas de luz recibió?')">§ Informe del día</button>
+      <button class="qq" onclick="sendQuick('¿Necesita agua? Decidí vos.')">§ ¿Necesita agua?</button>
+      <button class="qq" onclick="sendQuick('Regá la planta si lo considerás necesario.')">§ Regar si hace falta</button>
+      <button class="qq" onclick="sendQuick('¿Cuántas veces me acerqué hoy a la planta?')">§ Mis visitas</button>
+    </div>
+    <div class="chat-messages" id="chat-messages"></div>
+    <div class="chat-input-area">
+      <input class="chat-input" id="chat-input" placeholder="Consultar el archivo botánico..." onkeydown="if(event.key==='Enter')sendChat()">
+      <button class="chat-send" id="btn-send" onclick="sendChat()">Consultar →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ V. PROTOCOLO MQTT ══════════ -->
+<div class="accord" id="ac-mqtt">
+  <div class="accord-header" onclick="toggleAccord('ac-mqtt')">
+    <span class="accord-num">[V]</span>
+    <span class="accord-title">Protocolo MQTT — Registro de Mensajes</span>
+    <span class="accord-subtitle">Broker · Tópicos · Pub/Sub · Oculto por defecto</span>
+    <span class="accord-toggle">+</span>
+  </div>
+  <div class="accord-body">
+    <div class="margin-note">PLANO REF. M-05 · TRÁFICO DE RED · MOSQUITTO BROKER</div>
+    <div class="mqtt-log" id="mqtt-log"></div>
+  </div>
+</div>
+
+<footer>
+  <div class="footer-l">Modulor × Borges &nbsp;·&nbsp; Plataforma v2.0 &nbsp;·&nbsp; <span id="footer-time">—</span></div>
+  <div class="footer-r">"El jardín de los senderos que se bifurcan" — J.L. Borges</div>
+</footer>
+
+</div><!-- app -->
+
+<script src="gardener.js"></script>
+</body>
+</html>
